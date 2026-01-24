@@ -1,0 +1,9 @@
+{
+  "name": "Nekhebet Omen Display",
+  "short_name": "Omen",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#212121",
+  "theme_color": "#212121"
+}
