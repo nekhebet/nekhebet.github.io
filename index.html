@@ -1,40 +1,33 @@
 <!doctype html>
 <html lang="ru" data-text-lang="mixed">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nekhebet Omen Display</title>
+<head>
+  <meta charset="UTF-8" />
+  <title>Nekhebet Omen Display</title>
 
-    <meta property="og:title" content="Nekhebet Omen Display" />
-    <meta
-      property="og:description"
-      content="Verifiable Real-Time Event Display Pipeline"
-    />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://0808.us.nekhebet.su:8080/" />
-    <meta
-      property="og:image"
-      content="https://0808.us.nekhebet.su:8080/nekhebet-1120.png"
-    />
-    <meta property="og:image:width" content="800" />
-    <meta property="og:image:height" content="400" />
-    <meta property="og:image:type" content="image/png" />
-    <meta property="og:site_name" content="Nekhebet" />
-
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Nekhebet Omen Display" />
-    <meta
-      name="twitter:description"
-      content="Media Display. An interactive content."
-    />
-    <meta
-      name="twitter:image"
-      content="https://0808.us.nekhebet.su:8080/nekhebet-1120.png"
-    />
-    <link rel="manifest" href="/manifest.json">
-    <link rel="preconnect" href="https://0808.us.nekhebet.su:8080" crossorigin>
-	<link rel="dns-prefetch" href="https://0808.us.nekhebet.su:8080">
-
+  <meta name="description" content="Nekhebet Omen Display - верифицируемый пайплайн отображения событий в реальном времени. Интерактивная медиа-визуализация.">
+  <link rel="canonical" href="https://0808.us.nekhebet.su:8080/" />
+  
+  <meta property="og:title" content="Nekhebet Omen Display" />
+  <meta property="og:description" content="Verifiable Real-Time Event Display Pipeline" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://0808.us.nekhebet.su:8080/" />
+  <meta property="og:image" content="https://0808.us.nekhebet.su:8080/nekhebet-1120.png" />
+  <meta property="og:image:width" content="800" />
+  <meta property="og:image:height" content="400" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:site_name" content="Nekhebet" />
+  <meta property="og:locale" content="ru_RU">
+  
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Nekhebet Omen Display" />
+  <meta name="twitter:description" content="Media Display. An interactive content." />
+  <meta name="twitter:image" content="https://0808.us.nekhebet.su:8080/nekhebet-1120.png" />
+  
+  <link rel="manifest" href="/manifest.json">
+  <link rel="preconnect" href="https://0808.us.nekhebet.su:8080" crossorigin>
+  <link rel="preconnect" href="wss://0808.us.nekhebet.su:8080">
+  <link rel="dns-prefetch" href="https://0808.us.nekhebet.su:8080">
+  <link rel="prefetch" href="https://0808.us.nekhebet.su:8080/media-files?page=1" as="fetch" importance="low">
     <link
       rel="icon"
       type="image/svg+xml"
@@ -213,7 +206,7 @@
         right: 0;
         bottom: 0;
         opacity: 0;
-        transition: opacity 0.3s ease;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         pointer-events: none;
         z-index: 1;
       }
@@ -335,7 +328,7 @@
 
       .text {
         font-weight: 100;
-        font-size: clamp(14px, 1.5vw + 0.5rem, 20px);
+        font-size: clamp(14px, calc(1.5vw + 8px), 20px);
         color: #afafaf;
         max-width: 95%;
         word-wrap: break-word;
@@ -2437,23 +2430,37 @@
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             return;
           }
+          
           if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-            setTimeout(() => this.initWebSocket(), 100);
+            const connectionCheck = () => {
+              if (!this.ws) return;
+              
+              if (this.ws.readyState === WebSocket.OPEN) {
+                this.onWebSocketOpened();
+              } else if (this.ws.readyState === WebSocket.CLOSED) {
+                this.ws = null;
+                setTimeout(() => this.initWebSocket(), 500);
+              } else {
+                setTimeout(connectionCheck, 200);
+              }
+            };
+            setTimeout(connectionCheck, 200);
             return;
           }
+          
           this.ws = new WebSocket("wss://0808.us.nekhebet.su:8080");
+          
+          const connectionTimeout = setTimeout(() => {
+            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+              this.ws.close();
+            }
+          }, 5000);
+          
           this.ws.onopen = () => {
-            this.messageDisplay.updatePauseButton();
-            if (this.mediaErrorEl) this.mediaErrorEl.style.display = "none";
-            this.refreshFiles(true).then(() => {
-              this.newMediaQueue = [...this.newMediaFiles];
-              this.newMediaQueue.sort(
-                (a, b) =>
-                  new Date(b.mtime || new Date()).getTime() -
-                  new Date(a.mtime || new Date()).getTime(),
-              );
-            });
+            clearTimeout(connectionTimeout);
+            this.onWebSocketOpened();
           };
+          
           this.ws.onmessage = async (event) => {
             try {
               const data = JSON.parse(event.data);
@@ -2489,13 +2496,32 @@
               }
             } catch (error) {}
           };
+          
           this.ws.onclose = () => {
-            if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
+            clearTimeout(connectionTimeout);
+            this.ws = null;
+            
             setTimeout(() => {
               this.initWebSocket();
             }, 6000);
           };
-          this.ws.onerror = (error) => {};
+          
+          this.ws.onerror = (error) => {
+            clearTimeout(connectionTimeout);
+          };
+        }
+
+        onWebSocketOpened() {
+          this.messageDisplay.updatePauseButton();
+          if (this.mediaErrorEl) this.mediaErrorEl.style.display = "none";
+          this.refreshFiles(true).then(() => {
+            this.newMediaQueue = [...this.newMediaFiles];
+            this.newMediaQueue.sort(
+              (a, b) =>
+                new Date(b.mtime || new Date()).getTime() -
+                new Date(a.mtime || new Date()).getTime(),
+            );
+          });
         }
 
         async doubleFlashScreen() {
@@ -3421,7 +3447,7 @@
             ".controls button:nth-child(3)",
           );
           this.controlsEl = document.querySelector(".controls");
-          this.MAX_QUEUE_SIZE = 100;
+          this.MAX_QUEUE_SIZE = 99;
           this.MESSAGE_DISPLAY_DURATION = 6000;
           this.LOCAL_PHRASE_DURATION = 4500;
           this.mediaErrorEl = document.querySelector(".media-error");
@@ -3563,7 +3589,7 @@
                   }
                 }
               } catch (error) {}
-            }, 200),
+            }, 100),
           );
         }
 
@@ -3685,22 +3711,40 @@
 
         initWebSocket() {
           try {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              return;
+            }
+            
+            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+              const waitForConnection = () => {
+                if (!this.ws) return;
+                
+                if (this.ws.readyState === WebSocket.OPEN) {
+                  this.onWebSocketOpened();
+                } else if (this.ws.readyState === WebSocket.CLOSED) {
+                  this.ws = null;
+                  setTimeout(() => this.initWebSocket(), 500);
+                } else {
+                  setTimeout(waitForConnection, 200);
+                }
+              };
+              setTimeout(waitForConnection, 200);
+              return;
+            }
+            
             this.ws = new WebSocket("wss://0808.us.nekhebet.su:8080");
-            this.ws.onopen = () => {
-              this.isWebSocketReady = true;
-              this.updatePauseButton();
-
-              if (this.pendingMessagesBuffer.length > 0) {
-                const processBuffer = async () => {
-                  for (const msg of this.pendingMessagesBuffer) {
-                    this.addMessage(msg, true);
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                  }
-                  this.pendingMessagesBuffer = [];
-                };
-                processBuffer();
+            
+            const connectionTimeout = setTimeout(() => {
+              if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+                this.ws.close();
               }
+            }, 5000);
+            
+            this.ws.onopen = () => {
+              clearTimeout(connectionTimeout);
+              this.onWebSocketOpened();
             };
+            
             this.ws.onmessage = (event) => {
               try {
                 const data = JSON.parse(event.data);
@@ -3731,18 +3775,44 @@
                 }
               } catch (error) {}
             };
+            
             this.ws.onerror = (error) => {
+              clearTimeout(connectionTimeout);
               if (
                 error.message?.includes("cdn-cgi") ||
                 error.message?.includes("MIME type")
-              )
+              ) {
                 return;
+              }
             };
+            
             this.ws.onclose = () => {
+              clearTimeout(connectionTimeout);
               this.isWebSocketReady = false;
+              this.ws = null;
               setTimeout(() => this.initWebSocket(), 6000);
             };
-          } catch (error) {}
+            
+          } catch (error) {
+            setTimeout(() => this.initWebSocket(), 3000);
+          }
+        }
+
+        // Встроенный метод
+        onWebSocketOpened() {
+          this.isWebSocketReady = true;
+          this.updatePauseButton();
+
+          if (this.pendingMessagesBuffer.length > 0) {
+            const processBuffer = async () => {
+              for (const msg of this.pendingMessagesBuffer) {
+                this.addMessage(msg, true);
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+              this.pendingMessagesBuffer = [];
+            };
+            processBuffer();
+          }
         }
 
         async loadLocalPhrases() {
@@ -3837,7 +3907,7 @@
             this.allLocalPhrasesDisplayed &&
             !this.isWordCloudPaused
           ) {
-            await new Promise((resolve) => setTimeout(resolve, 3500));
+            await new Promise((resolve) => setTimeout(resolve, 3000));
             await this.displayNext();
           }
           this.updatePauseButton();
