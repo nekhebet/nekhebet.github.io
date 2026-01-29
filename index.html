@@ -2033,7 +2033,7 @@
           this.newText = "";
         }
 
-        setText(newText, highlights = [], prefix = "", speed = "fast") {
+        setText(newText, highlights = [], prefix = "", speed = "normal") {
           this.isStopped = false;
           const promise = new Promise((resolve) => (this.resolve = resolve));
           this.newText = newText;
