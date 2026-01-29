@@ -915,7 +915,7 @@
             fontFamily:
               '"Trebuchet MS", "Heiti TC", "微軟正黑體", ' +
               '"Arial Unicode MS", "Droid Fallback Sans", sans-serif',
-            fontWeight: "normal",
+            fontWeight: "",
             color: "random-dark",
             minSize: 12,
             weightFactor: 1,
@@ -2034,7 +2034,7 @@
           this.newText = "";
         }
 
-        setText(newText, highlights = [], prefix = "", speed = "normal") {
+        setText(newText, highlights = [], prefix = "", speed = "instant") {
           this.isStopped = false;
           const promise = new Promise((resolve) => (this.resolve = resolve));
           this.newText = newText;
