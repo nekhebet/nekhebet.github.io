@@ -2033,7 +2033,7 @@
           this.newText = "";
         }
 
-        setText(newText, highlights = [], prefix = "", speed = "normal") {
+        setText(newText, highlights = [], prefix = "", speed = "instant") {
           this.isStopped = false;
           const promise = new Promise((resolve) => (this.resolve = resolve));
           this.newText = newText;
@@ -4653,7 +4653,7 @@
             this.updatePauseButton();
             if (this.localPhrases.length > 0) {
               const defaultPhrase = this.localPhrases[0];
-              await this.fxText.setText(defaultPhrase, [], "", "normal");
+              await this.fxText.setText(defaultPhrase, [], "", "instant");
               this.currentMessage = defaultPhrase;
               this.currentHighlights = [];
               this.currentPrefix = "";
