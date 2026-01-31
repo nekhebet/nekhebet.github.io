@@ -141,11 +141,10 @@
         z-index: 7;
         flex-wrap: nowrap;
         justify-content: center;
-        min-width: 300px;
+        min-width: 320px;
         backdrop-filter: blur(4px);
         padding: 8px;
         border-radius: 12px;
-        background-color: rgba(33, 33, 33, 0.7);
         transition: background-color 0.3s ease;
       }
 
@@ -319,7 +318,7 @@
         color: #afafaf;
         max-width: 95%;
         word-wrap: break-word;
-        padding: 10px 5px 10px 5px;
+        padding: 15px 5px 10px 5px;
         text-align: left;
         line-height: 1;
         text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -395,7 +394,7 @@
         display: flex;
         justify-content: center;
         gap: 2px;
-        padding: 10px 10px;
+        padding: 15px 10px;
         border-radius: 10px;
         z-index: 100;
         opacity: 0.8;
@@ -3739,7 +3738,7 @@
               "Nekhebet Omen Display / Real-Time Event Visualization System / Cryptographic Guarantees / FreeBSD Jail Horny Middleware WebSocket Bash SQL JavaScript Python C++ ASM И ДРУГИЕ КЕКСЫ. We trust you have received the usual lecture from the local System Administrator. It usually boils down to these three things:,#1) Respect the privacy of others. #2) Think before you type. #3) With great power comes great responsibility. ....";
             this.fullLocalPhrases = [defaultPhrase];
             this.localPhrases = [
-              defaultPhrase.toUpperCase().slice(0, 68) + " ",
+              defaultPhrase.toUpperCase().slice(0, 100) + " ",
             ];
             await this.mediaSlides.init();
             await this.mediaSlides.show();
@@ -4426,44 +4425,24 @@
                 .join("")}</div>`
             : "";
           this.updateResetButton();
-
           if (this.contentEl) {
             this.contentEl.style.background = "";
-            if (message.special_id === "1b") {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              this.contentEl.style.transition = "background 1s ease";
-              this.contentEl.style.background =
-                "radial-gradient(#000000, transparent 50%)";
-            }
-            if (message.special_id === "2b") {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              this.contentEl.style.transition = "background 1s ease";
-              this.contentEl.style.background =
-                "radial-gradient(#8d1919, transparent 50%)";
-            }
-            if (message.special_id === "3b") {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              this.contentEl.style.transition = "background 1s ease";
-              this.contentEl.style.background =
-                "radial-gradient(#6e5b07, transparent 50%)";
-            }
-            if (message.special_id === "4b") {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              this.contentEl.style.transition = "background 1s ease";
-              this.contentEl.style.background =
-                "radial-gradient(#810372, transparent 50%)";
-            }
-            if (message.special_id === "5b") {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              this.contentEl.style.transition = "background 1s ease";
-              this.contentEl.style.background =
-                "radial-gradient(#036b81, transparent 50%)";
-            }
-            if (message.special_id === "6b") {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              this.contentEl.style.transition = "background 1s ease";
-              this.contentEl.style.background =
-                "radial-gradient(#0c6019, transparent 50%)";
+            const specialBackgrounds = {
+              "1b": "#000000",
+              "2b": "#8d1919",
+              "3b": "#6e5b07",
+              "4b": "#810372",
+              "5b": "#036b81",
+              "6b": "#0c6019"
+            };
+            const color = specialBackgrounds[message.special_id];
+            if (color) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              this.contentEl.style.transition = "background 1.2s ease";
+              this.contentEl.style.backgroundImage = `radial-gradient(circle at center, ${color} 0%, transparent 70%)`;
+              this.contentEl.style.backgroundSize = "contain";
+              this.contentEl.style.backgroundRepeat = "no-repeat";
+              this.contentEl.style.backgroundPosition = "center";
             }
           }
           try {
@@ -4653,7 +4632,7 @@
             this.updatePauseButton();
             if (this.localPhrases.length > 0) {
               const defaultPhrase = this.localPhrases[0];
-              await this.fxText.setText(defaultPhrase, [], "", "instant");
+              await this.fxText.setText(defaultPhrase, [], "", "fast");
               this.currentMessage = defaultPhrase;
               this.currentHighlights = [];
               this.currentPrefix = "";
