@@ -3761,7 +3761,7 @@
             this.mediaSlides.startMediaSwitchInterval();
             this.updatePauseButton();
             if (this.queue.length > 0) {
-              await new Promise((resolve) => setTimeout(resolve, 4500));
+              await new Promise((resolve) => setTimeout(resolve, 4000));
               await this.displayNext();
             }
             return;
@@ -3809,7 +3809,7 @@
             this.allLocalPhrasesDisplayed &&
             !this.isWordCloudPaused
           ) {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await new Promise((resolve) => setTimeout(resolve, 4000));
             await this.displayNext();
           }
           this.updatePauseButton();
@@ -3822,7 +3822,7 @@
           this.isAnimating = true;
           try {
             this.wordCloudEl.classList.add("word-cloud-hidden");
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 100));
             this.textEl.style.display = "block";
             const textPromise = this.fxText.setText(phrase, []);
             await textPromise;
