@@ -4632,7 +4632,7 @@
             this.updatePauseButton();
             if (this.localPhrases.length > 0) {
               const defaultPhrase = this.localPhrases[0];
-              await this.fxText.setText(defaultPhrase, [], "", "normal");
+              await this.fxText.setText(defaultPhrase, [], "", "instant");
               this.currentMessage = defaultPhrase;
               this.currentHighlights = [];
               this.currentPrefix = "";
