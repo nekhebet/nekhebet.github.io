@@ -2356,7 +2356,7 @@
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
               this.ws.close();
             }
-          }, 10000);
+          }, 8000);
           
           this.ws.onopen = () => {
             clearTimeout(connectionTimeout);
@@ -2405,7 +2405,7 @@
             
             setTimeout(() => {
               this.initWebSocket();
-            }, 10000);
+            }, 8000);
           };
           
           this.ws.onerror = (error) => {
@@ -2678,7 +2678,7 @@
               video.addEventListener("loadedmetadata", () => {
                 if (this.slides[this.currentIndex]?.dataset.id === id) {
                   video.play().catch((err) => {
-                    setTimeout(() => video.play().catch(() => {}), 1000);
+                    setTimeout(() => video.play().catch(() => {}), 500);
                   });
                 }
               });
@@ -2763,7 +2763,7 @@
           if (
             !isManual &&
             this.lastManualSwitch &&
-            Date.now() - this.lastManualSwitch < 1000
+            Date.now() - this.lastManualSwitch < 1500
           ) {
             return;
           }
@@ -2781,7 +2781,7 @@
                 (slide) => String(slide.dataset.id) === String(nextFile.id),
               );
               if (nextIndex === -1) {
-                await new Promise((resolve) => setTimeout(resolve, 100));
+                await new Promise((resolve) => setTimeout(resolve, 300));
                 nextIndex = this.slides.findIndex(
                   (slide) => String(slide.dataset.id) === String(nextFile.id),
                 );
@@ -3223,7 +3223,7 @@
               }
               const timeoutId = setTimeout(
                 resolve,
-                SLIDE_ANIMATION_DURATION + 100,
+                SLIDE_ANIMATION_DURATION + 200,
               );
               nextSlide.addEventListener(
                 "transitionend",
@@ -3358,7 +3358,7 @@
           this.isWebSocketReady = false;
           this.isResetting = false;
           this.lastMessageTime = 0;
-          this.MIN_MESSAGE_INTERVAL = 4000;
+          this.MIN_MESSAGE_INTERVAL = 1000;
           this.isFastStartMode = false;
           this.initWebSocket();
           this.loadLocalPhrases();
@@ -3491,7 +3491,7 @@
                   }
                 }
               } catch (error) {}
-            }, 100),
+            }, 200),
           );
         }
 
@@ -3640,7 +3640,7 @@
               if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
                 this.ws.close();
               }
-            }, 10000);
+            }, 8000);
             
             this.ws.onopen = () => {
               clearTimeout(connectionTimeout);
@@ -3692,7 +3692,7 @@
               clearTimeout(connectionTimeout);
               this.isWebSocketReady = false;
               this.ws = null;
-              setTimeout(() => this.initWebSocket(), 10000);
+              setTimeout(() => this.initWebSocket(), 8000);
             };
             
           } catch (error) {
@@ -3700,7 +3700,6 @@
           }
         }
 
-        // Встроенный метод
         onWebSocketOpened() {
           this.isWebSocketReady = true;
           this.updatePauseButton();
@@ -3735,10 +3734,10 @@
             this.displayLocalPhrases();
           } catch (error) {
             const defaultPhrase =
-              "Nekhebet Omen Display / Real-Time Event Visualization System / Cryptographic Guarantees / FreeBSD Jail Horny Middleware WebSocket Bash SQL JavaScript Python C++ ASM И ДРУГИЕ КЕКСЫ. We trust you have received the usual lecture from the local System Administrator. It usually boils down to these three things:,#1) Respect the privacy of others. #2) Think before you type. #3) With great power comes great responsibility. ....";
+              "Telegram Events Mirror / Nekhebet Omen Display / Real-Time Event Visualization System / Cryptographic Guarantees / FreeBSD Jail Horny Middleware WebSocket Bash SQL JavaScript Python C++ ASM И ДРУГИЕ КЕКСЫ. We trust you have received the usual lecture from the local System Administrator. It usually boils down to these three things:,#1) Respect the privacy of others. #2) Think before you type. #3) With great power comes great responsibility. ....";
             this.fullLocalPhrases = [defaultPhrase];
             this.localPhrases = [
-              defaultPhrase.toUpperCase().slice(0, 100) + " ",
+              defaultPhrase.toUpperCase().slice(0, 23) + " ",
             ];
             await this.mediaSlides.init();
             await this.mediaSlides.show();
@@ -4018,7 +4017,7 @@
                 this.mediaSlides.ignoreNextMessageSlide = false;
               } else if (fromWebSocket && this.mediaSlides.isLocalPhraseMode) {
                 if (this.isAnimating) {
-                  await new Promise((resolve) => setTimeout(resolve, 100));
+                  await new Promise((resolve) => setTimeout(resolve, 200));
                 }
                 await this.mediaSlides.switchToNormalMode();
               }
@@ -4098,7 +4097,7 @@
                 resolve();
                 return;
               }
-              this.timeouts.push(setTimeout(resolve, 100));
+              this.timeouts.push(setTimeout(resolve, 200));
             });
             this.flashEl.classList.remove("active");
           }
@@ -4361,7 +4360,7 @@
             WordCloud(this.wordCloudEl, {
               list: wordList,
               animate: !this.isWordCloudPaused,
-              animationDuration: 100,
+              animationDuration: 500,
               fontFamily: "Anonymous Pro, monospace",
               fontWeight: "normal",
               color: () => `hsl(${Math.random() * 360}, 50%, 60%)`,
@@ -4603,11 +4602,11 @@
             await this.closeWebSocket();
             await this.mediaSlides.closeWebSocket();
 
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 300));
 
             await this.mediaSlides.initWebSocket();
 
-            await this.mediaSlides.waitForWebSocketConnection(10000);
+            await this.mediaSlides.waitForWebSocketConnection(8000);
 
             this.initWebSocket();
 
