@@ -2246,7 +2246,7 @@
           });
         }
 
-        async waitForWebSocketConnection(timeout = 5000) {
+        async waitForWebSocketConnection(timeout = 10000) {
           return new Promise((resolve, reject) => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
               resolve();
@@ -2356,7 +2356,7 @@
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
               this.ws.close();
             }
-          }, 5000);
+          }, 10000);
           
           this.ws.onopen = () => {
             clearTimeout(connectionTimeout);
@@ -2405,7 +2405,7 @@
             
             setTimeout(() => {
               this.initWebSocket();
-            }, 6000);
+            }, 10000);
           };
           
           this.ws.onerror = (error) => {
@@ -3589,7 +3589,7 @@
           });
         }
 
-        async waitForWebSocketConnection(timeout = 5000) {
+        async waitForWebSocketConnection(timeout = 10000) {
           return new Promise((resolve, reject) => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
               resolve();
@@ -3640,7 +3640,7 @@
               if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
                 this.ws.close();
               }
-            }, 5000);
+            }, 10000);
             
             this.ws.onopen = () => {
               clearTimeout(connectionTimeout);
@@ -3692,7 +3692,7 @@
               clearTimeout(connectionTimeout);
               this.isWebSocketReady = false;
               this.ws = null;
-              setTimeout(() => this.initWebSocket(), 6000);
+              setTimeout(() => this.initWebSocket(), 10000);
             };
             
           } catch (error) {
@@ -4570,7 +4570,7 @@
 
         async resetQueue() {
           const now = Date.now();
-          if (now - this.lastResetClick < 5000) {
+          if (now - this.lastResetClick < 6000) {
             return;
           }
           this.lastResetClick = now;
@@ -4581,7 +4581,7 @@
 
           setTimeout(() => {
             this.isFastStartMode = false;
-          }, 5000);
+          }, 6000);
 
           if (this.isAnimating) {
             await new Promise((resolve) => setTimeout(resolve, 200));
