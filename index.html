@@ -3358,7 +3358,7 @@
           this.isWebSocketReady = false;
           this.isResetting = false;
           this.lastMessageTime = 0;
-          this.MIN_MESSAGE_INTERVAL = 5000;
+          this.MIN_MESSAGE_INTERVAL = 2000;
           this.isFastStartMode = false;
           this.initWebSocket();
           this.loadLocalPhrases();
@@ -3761,7 +3761,7 @@
             this.mediaSlides.startMediaSwitchInterval();
             this.updatePauseButton();
             if (this.queue.length > 0) {
-              await new Promise((resolve) => setTimeout(resolve, 3000));
+              await new Promise((resolve) => setTimeout(resolve, 2000));
               await this.displayNext();
             }
             return;
@@ -3809,7 +3809,7 @@
             this.allLocalPhrasesDisplayed &&
             !this.isWordCloudPaused
           ) {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await new Promise((resolve) => setTimeout(resolve, 2000));
             await this.displayNext();
           }
           this.updatePauseButton();
