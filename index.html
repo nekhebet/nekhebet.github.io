@@ -2124,7 +2124,6 @@
           this.slidesEl = document.querySelector(".media-slides");
           this.messageDisplay = messageDisplay;
           this.slides = [];
-          this.slideData = new WeakMap();
           this.currentIndex = -1;
           this.files = [];
           this.newMediaQueue = [];
@@ -2134,8 +2133,6 @@
           this.lastCheckTime = 0;
           this.lastFullRefresh = 0;
           this.MAX_FILES = 50;
-          this.MAX_SLIDES_IN_DOM = 50;
-          this.MAX_DATA_ITEMS = 150;
           this.colorQueue = [];
           this.skipNextAutoSlide = false;
           this.retryCount = 0;
@@ -2156,7 +2153,6 @@
           this.justSwitchedToNormalMode = false;
           this.lastWebSocketSwitch = 0;
           this.ws = null;
-          this.wsHandlers = {};
           this.permanentPreloaded = true;
           this.touchStartX = 0;
           this.touchEndX = 0;
@@ -2164,13 +2160,8 @@
           this.mediaErrorEl = null;
           this.contentEl = null;
           this.flashEl = null;
-          this.checkInterval = null;
-          this.cleanupInterval = null;
-          this.mediaSwitchInterval = null;
-          this.eventHandlers = new Map();
           this.initDomCache();
           this.initSwipeHandlers();
-          this.startCleanupInterval();
         }
 
         initDomCache() {
@@ -2182,56 +2173,53 @@
         initSwipeHandlers() {
           if (!this.slidesEl) return;
 
-          const touchStartHandler = (e) => {
-            this.touchStartX = e.changedTouches[0].screenX;
-          };
+          this.slidesEl.addEventListener(
+            "touchstart",
+            (e) => {
+              this.touchStartX = e.changedTouches[0].screenX;
+            },
+            { passive: true },
+          );
 
-          const touchEndHandler = (e) => {
-            if (this.isAnimating || this.messageDisplay.isWordCloudPaused) return;
-            this.touchEndX = e.changedTouches[0].screenX;
-            const diffX = this.touchStartX - this.touchEndX;
-            if (Math.abs(diffX) > this.SWIPE_THRESHOLD) {
-              if (diffX > 0) {
-                this.handleSwipeNext();
+          this.slidesEl.addEventListener(
+            "touchend",
+            (e) => {
+              if (this.isAnimating || this.messageDisplay.isWordCloudPaused)
+                return;
+
+              this.touchEndX = e.changedTouches[0].screenX;
+              const diffX = this.touchStartX - this.touchEndX;
+
+              if (Math.abs(diffX) > this.SWIPE_THRESHOLD) {
+                if (diffX > 0) {
+                  this.handleSwipeNext();
+                }
               }
-            }
-          };
+            },
+            { passive: true },
+          );
 
           let mouseDownX = 0;
-          const mouseDownHandler = (e) => {
+          this.slidesEl.addEventListener("mousedown", (e) => {
             mouseDownX = e.clientX;
-          };
+          });
 
-          const mouseUpHandler = (e) => {
-            if (this.isAnimating || this.messageDisplay.isWordCloudPaused) return;
+          this.slidesEl.addEventListener("mouseup", (e) => {
+            if (this.isAnimating || this.messageDisplay.isWordCloudPaused)
+              return;
+
             const diffX = mouseDownX - e.clientX;
             if (Math.abs(diffX) > this.SWIPE_THRESHOLD && diffX > 0) {
               this.handleSwipeNext();
             }
-          };
-
-          this.slidesEl.addEventListener("touchstart", touchStartHandler, { passive: true });
-          this.slidesEl.addEventListener("touchend", touchEndHandler, { passive: true });
-          this.slidesEl.addEventListener("mousedown", mouseDownHandler);
-          this.slidesEl.addEventListener("mouseup", mouseUpHandler);
-
-          this.eventHandlers.set('touchstart', touchStartHandler);
-          this.eventHandlers.set('touchend', touchEndHandler);
-          this.eventHandlers.set('mousedown', mouseDownHandler);
-          this.eventHandlers.set('mouseup', mouseUpHandler);
-        }
-
-        removeEventListeners() {
-          if (!this.slidesEl) return;
-
-          for (const [event, handler] of this.eventHandlers) {
-            this.slidesEl.removeEventListener(event, handler);
-          }
-          this.eventHandlers.clear();
+          });
         }
 
         async handleSwipeNext() {
-          if (this.messageDisplay.nextButton && !this.messageDisplay.nextButton.disabled) {
+          if (
+            this.messageDisplay.nextButton &&
+            !this.messageDisplay.nextButton.disabled
+          ) {
             await window.nextSlide();
           }
         }
@@ -2243,28 +2231,19 @@
               return;
             }
 
-            this.clearWebSocketHandlers();
-
             const oldWs = this.ws;
             this.ws = null;
 
-            if (oldWs.readyState === WebSocket.OPEN || oldWs.readyState === WebSocket.CONNECTING) {
+            if (
+              oldWs.readyState === WebSocket.OPEN ||
+              oldWs.readyState === WebSocket.CONNECTING
+            ) {
               oldWs.onclose = () => resolve();
               oldWs.close();
             } else {
               resolve();
             }
           });
-        }
-
-        clearWebSocketHandlers() {
-          if (this.ws) {
-            this.ws.onopen = null;
-            this.ws.onmessage = null;
-            this.ws.onclose = null;
-            this.ws.onerror = null;
-          }
-          this.wsHandlers = {};
         }
 
         async waitForWebSocketConnection(timeout = 10000) {
@@ -2313,7 +2292,7 @@
                 this.globalQueue = [...this.newMediaFiles];
                 await this.refreshFiles(true);
               }
-              this.checkInterval = setInterval(() => this.checkNewMediaFiles(), 150000);
+              setInterval(() => this.checkNewMediaFiles(), 150000);
               this.startMediaSwitchInterval();
               this.initWebSocket();
             }
@@ -2324,14 +2303,22 @@
 
         async preloadPermanentFile() {
           try {
-            const response = await fetch(`${API_BASE}/media-files?page=1&noCache=${Date.now()}`);
+            const response = await fetch(
+              `${API_BASE}/media-files?page=1&noCache=${Date.now()}`,
+            );
             if (!response.ok) {
-              throw new Error(`Request error /media-files?page=1: ${response.status}`);
+              throw new Error(
+                `Request error /media-files?page=1: ${response.status}`,
+              );
             }
             const permanentFiles = (await response.json()).slice(0, 1);
             if (permanentFiles.length > 0) {
               const file = permanentFiles[0];
-              if (!this.slides.some((slide) => slide.dataset.id === String(file.id))) {
+              if (
+                !this.slides.some(
+                  (slide) => slide.dataset.id === String(file.id),
+                )
+              ) {
                 this.createSlide(file, false);
                 this.permanentPreloaded = true;
               }
@@ -2342,15 +2329,14 @@
         }
 
         initWebSocket() {
-          this.clearWebSocketHandlers();
-
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             return;
           }
-
+          
           if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
             const connectionCheck = () => {
               if (!this.ws) return;
+              
               if (this.ws.readyState === WebSocket.OPEN) {
                 this.onWebSocketOpened();
               } else if (this.ws.readyState === WebSocket.CLOSED) {
@@ -2363,21 +2349,21 @@
             setTimeout(connectionCheck, 200);
             return;
           }
-
+          
           this.ws = new WebSocket("wss://0808.us.nekhebet.su:8080");
-
+          
           const connectionTimeout = setTimeout(() => {
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
               this.ws.close();
             }
           }, 8000);
-
-          const openHandler = () => {
+          
+          this.ws.onopen = () => {
             clearTimeout(connectionTimeout);
             this.onWebSocketOpened();
           };
-
-          const messageHandler = async (event) => {
+          
+          this.ws.onmessage = async (event) => {
             try {
               const data = JSON.parse(event.data);
               if (data.type === "new_media") {
@@ -2386,14 +2372,21 @@
                   file_type: data.file_type,
                   special_id: data.special_id,
                 });
-                if (this.slides.some((slide) => slide.dataset.id === String(data.id))) {
+                if (
+                  this.slides.some(
+                    (slide) => slide.dataset.id === String(data.id),
+                  )
+                ) {
                   this.newMediaQueue.push({
                     id: data.id,
                     mtime: data.mtime || new Date().toISOString(),
                     file_type: data.file_type,
                     special_id: data.special_id,
                   });
-                  if (data.special_id !== undefined && data.special_id !== null) {
+                  if (
+                    data.special_id !== undefined &&
+                    data.special_id !== null
+                  ) {
                     this.priorityQueue.push({
                       id: data.id,
                       mtime: data.mtime || new Date().toISOString(),
@@ -2405,29 +2398,18 @@
               }
             } catch (error) {}
           };
-
-          const closeHandler = () => {
+          
+          this.ws.onclose = () => {
             clearTimeout(connectionTimeout);
             this.ws = null;
+            
             setTimeout(() => {
               this.initWebSocket();
             }, 8000);
           };
-
-          const errorHandler = (error) => {
+          
+          this.ws.onerror = (error) => {
             clearTimeout(connectionTimeout);
-          };
-
-          this.ws.onopen = openHandler;
-          this.ws.onmessage = messageHandler;
-          this.ws.onclose = closeHandler;
-          this.ws.onerror = errorHandler;
-
-          this.wsHandlers = {
-            open: openHandler,
-            message: messageHandler,
-            close: closeHandler,
-            error: errorHandler
           };
         }
 
@@ -2467,7 +2449,10 @@
             if (!response.ok) {
               throw new Error(`Error /new-media-files: ${response.status}`);
             }
-            this.newMediaFiles = (await response.json()).slice(0, this.MAX_FILES);
+            this.newMediaFiles = (await response.json()).slice(
+              0,
+              this.MAX_FILES,
+            );
           } catch (error) {
             console.error("loadNewMediaFiles failed:", error);
           }
@@ -2488,15 +2473,6 @@
             clearInterval(this.mediaSwitchInterval);
             this.mediaSwitchInterval = null;
           }
-        }
-
-        startCleanupInterval() {
-          if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-          }
-          this.cleanupInterval = setInterval(() => {
-            this.performCleanup();
-          }, 5 * 60 * 1000);
         }
 
         async switchToNormalMode() {
@@ -2572,6 +2548,7 @@
               );
             }
             let newFiles = (await response.json()).slice(0, this.MAX_FILES);
+
             if (newFiles.length === 0 && this.currentPage > 1) {
               this.currentPage = 1;
               const fallbackResponse = await fetch(
@@ -2582,7 +2559,10 @@
                   `Request error /media-files?page=${this.currentPage}: ${fallbackResponse.status}`,
                 );
               }
-              newFiles = (await fallbackResponse.json()).slice(0, this.MAX_FILES);
+              newFiles = (await fallbackResponse.json()).slice(
+                0,
+                this.MAX_FILES,
+              );
             }
             const existingIds = new Set(
               this.globalQueue.map((f) => String(f.id)),
@@ -2611,7 +2591,6 @@
             });
             this.files = [...this.files, ...newFiles].slice(-this.MAX_FILES);
             this.globalQueue.push(...newFiles);
-            this.trimDataArrays();
           } catch (error) {
             if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
           }
@@ -2620,23 +2599,6 @@
         removeSlide(slide) {
           const index = this.slides.findIndex((s) => s === slide);
           if (index !== -1) {
-            const handlers = this.slideData.get(slide);
-            if (handlers) {
-              const media = slide.querySelector("img, video");
-              if (media) {
-                if (handlers.error && media.onerror === handlers.error) {
-                  media.onerror = null;
-                }
-                if (handlers.click) {
-                  media.removeEventListener("click", handlers.click);
-                }
-                if (handlers.loadedmetadata) {
-                  media.removeEventListener("loadedmetadata", handlers.loadedmetadata);
-                }
-              }
-              this.slideData.delete(slide);
-            }
-
             const media = slide.querySelector("img, video");
             if (media) {
               if (media.tagName === "VIDEO") {
@@ -2654,40 +2616,6 @@
           }
         }
 
-        cleanupOldSlides() {
-          if (this.slides.length <= this.MAX_SLIDES_IN_DOM) return;
-          const keepFrom = Math.max(0, this.currentIndex - 10);
-          for (let i = this.slides.length - 1; i >= 0; i--) {
-            if (i < keepFrom || i > this.currentIndex + 20) {
-              this.removeSlide(this.slides[i]);
-            }
-          }
-        }
-
-        trimDataArrays() {
-          const arrays = [this.files, this.globalQueue, this.newMediaQueue, this.priorityQueue];
-          arrays.forEach(arr => {
-            if (arr.length > this.MAX_DATA_ITEMS) {
-              arr.splice(0, arr.length - this.MAX_DATA_ITEMS);
-            }
-          });
-        }
-
-        performCleanup() {
-          this.cleanupOldSlides();
-          this.trimDataArrays();
-          
-          this.files = this.files.slice(-this.MAX_DATA_ITEMS);
-          this.globalQueue = this.globalQueue.slice(-this.MAX_DATA_ITEMS);
-          this.newMediaQueue = this.newMediaQueue.slice(-this.MAX_DATA_ITEMS);
-          this.priorityQueue = this.priorityQueue.slice(-this.MAX_DATA_ITEMS);
-          this.newMediaFiles = this.newMediaFiles.slice(-this.MAX_DATA_ITEMS);
-
-          if (window.gc) {
-            setTimeout(() => window.gc(), 100);
-          }
-        }
-
         createSlide({ id, file_type, special_id }, prepend = false) {
           const existingSlide = this.slides.find(
             (slide) => slide?.dataset?.id === String(id),
@@ -2701,6 +2629,7 @@
             }
             return;
           }
+
           const slide = document.createElement("div");
           slide.className = "media-slide";
           slide.style.opacity = "0";
@@ -2708,8 +2637,10 @@
           slide.dataset.id = String(id);
           slide.dataset.special_id =
             special_id !== undefined ? String(special_id) : null;
+
           const mediaContainer = document.createElement("div");
           mediaContainer.className = "media-container";
+
           let mediaCreated = false;
           const isActiveOrNext =
             this.currentIndex === -1 || this.slides.length <= 2;
@@ -2722,19 +2653,15 @@
               this.mediaErrorEl.classList.add("visible");
             }
           };
+
           try {
             if (["jpg", "jfif", "png", "gif"].includes(file_type)) {
               const img = document.createElement("img");
               img.src = `${API_BASE}/media/${id}`;
               img.loading = isActiveOrNext ? "eager" : "lazy";
-              
-              const errorHandler = handleError.bind(this);
-              img.onerror = errorHandler;
-              
+              img.onerror = handleError.bind(this);
               mediaContainer.appendChild(img);
               mediaCreated = true;
-              
-              this.slideData.set(slide, { error: errorHandler });
             } else if (["mp4", "webm", "mov"].includes(file_type)) {
               const video = document.createElement("video");
               video.src = `${API_BASE}/media/${id}`;
@@ -2743,54 +2670,40 @@
               video.playsInline = true;
               video.loading = isActiveOrNext ? "auto" : "lazy";
               video.preload = isActiveOrNext ? "eager" : "metadata";
+
               if (!this.isLocalPhraseMode) {
                 video.controls = true;
               }
-              
-              const loadedHandler = () => {
+
+              video.addEventListener("loadedmetadata", () => {
                 if (this.slides[this.currentIndex]?.dataset.id === id) {
                   video.play().catch((err) => {
                     setTimeout(() => video.play().catch(() => {}), 500);
                   });
                 }
-              };
-              
-              const clickHandler = (event) => {
+              });
+
+              video.onerror = handleError.bind(this);
+              video.addEventListener("click", (event) => {
                 if (!this.isLocalPhraseMode) {
                   event.preventDefault();
                   this.toggleVideoSound(video, slide);
                 }
-              };
-              
-              const errorHandler = handleError.bind(this);
-              
-              video.addEventListener("loadedmetadata", loadedHandler);
-              video.addEventListener("click", clickHandler);
-              video.onerror = errorHandler;
-              
+              });
+
               mediaContainer.appendChild(video);
               mediaCreated = true;
-              
-              this.slideData.set(slide, {
-                loadedmetadata: loadedHandler,
-                click: clickHandler,
-                error: errorHandler
-              });
             } else if (file_type === "json") {
               const lottie = document.createElement("lottie-player");
               lottie.src = `${API_BASE}/media/${id}`;
               lottie.autoplay = true;
               lottie.loop = true;
               lottie.loading = isActiveOrNext ? "eager" : "lazy";
-              
-              const errorHandler = handleError.bind(this);
-              lottie.addEventListener("error", errorHandler);
-              
+              lottie.addEventListener("error", handleError.bind(this));
               mediaContainer.appendChild(lottie);
               mediaCreated = true;
-              
-              this.slideData.set(slide, { error: errorHandler });
             }
+
             if (mediaCreated) {
               slide.appendChild(mediaContainer);
               if (prepend) {
@@ -2884,10 +2797,8 @@
           }
           let nextIndex = await this.selectNextIndex();
           if (nextIndex === -1 && !this.isLocalPhraseMode) {
-            if (this.globalQueue.length < 10) {
-              this.currentPage++;
-              await this.refreshFiles(true);
-            }
+            this.currentPage++;
+            await this.refreshFiles(true);
             nextIndex = await this.selectNextIndex();
           }
           if (nextIndex !== -1) {
@@ -3246,6 +3157,10 @@
               return nextIndex;
             }
           }
+          if (this.globalQueue.length <= 10 && !this.isLocalPhraseMode) {
+            this.currentPage++;
+            await this.refreshFiles(true).catch((error) => {});
+          }
           if (this.globalQueue.length === 0) {
             if (this.isLocalPhraseMode) {
               this.globalQueue = [...this.newMediaFiles];
@@ -3333,7 +3248,6 @@
             this.newMediaQueue = this.newMediaQueue.filter(
               (f) => String(f.id) !== slideId,
             );
-            this.cleanupOldSlides();
           } catch (error) {
           } finally {
             this.isAnimating = false;
@@ -3395,43 +3309,6 @@
               }
             }
           });
-        }
-
-        destroy() {
-          this.removeEventListeners();
-          
-          if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = null;
-          }
-          
-          if (this.checkInterval) {
-            clearInterval(this.checkInterval);
-            this.checkInterval = null;
-          }
-          
-          this.stopMediaSwitchInterval();
-          
-          this.clearWebSocketHandlers();
-          if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-          }
-          
-          this.slides.forEach(slide => this.removeSlide(slide));
-          this.slides = [];
-          this.slideData = new WeakMap();
-          
-          this.files = [];
-          this.globalQueue = [];
-          this.priorityQueue = [];
-          this.newMediaQueue = [];
-          this.newMediaFiles = [];
-          
-          this.slidesEl = null;
-          this.mediaErrorEl = null;
-          this.contentEl = null;
-          this.flashEl = null;
         }
       }
 
