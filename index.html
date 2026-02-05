@@ -2124,8 +2124,7 @@
           this.slidesEl = document.querySelector(".media-slides");
           this.messageDisplay = messageDisplay;
           this.slides = [];
-          this.slideData = new WeakMap();
-          this.shownFiles = new Set();
+          this.MAX_SLIDES = 50;
           this.currentIndex = -1;
           this.files = [];
           this.newMediaQueue = [];
@@ -2135,9 +2134,6 @@
           this.lastCheckTime = 0;
           this.lastFullRefresh = 0;
           this.MAX_FILES = 50;
-          this.MAX_SLIDES_IN_DOM = 50;
-          this.MAX_DATA_ITEMS = 150;
-          this.MIN_SLIDES_TO_KEEP = 30;
           this.colorQueue = [];
           this.skipNextAutoSlide = false;
           this.retryCount = 0;
@@ -2158,7 +2154,6 @@
           this.justSwitchedToNormalMode = false;
           this.lastWebSocketSwitch = 0;
           this.ws = null;
-          this.wsHandlers = {};
           this.permanentPreloaded = true;
           this.touchStartX = 0;
           this.touchEndX = 0;
@@ -2166,13 +2161,8 @@
           this.mediaErrorEl = null;
           this.contentEl = null;
           this.flashEl = null;
-          this.checkInterval = null;
-          this.cleanupInterval = null;
-          this.mediaSwitchInterval = null;
-          this.eventHandlers = new Map();
           this.initDomCache();
           this.initSwipeHandlers();
-          this.startCleanupInterval();
         }
 
         initDomCache() {
@@ -2184,56 +2174,53 @@
         initSwipeHandlers() {
           if (!this.slidesEl) return;
 
-          const touchStartHandler = (e) => {
-            this.touchStartX = e.changedTouches[0].screenX;
-          };
+          this.slidesEl.addEventListener(
+            "touchstart",
+            (e) => {
+              this.touchStartX = e.changedTouches[0].screenX;
+            },
+            { passive: true },
+          );
 
-          const touchEndHandler = (e) => {
-            if (this.isAnimating || this.messageDisplay.isWordCloudPaused) return;
-            this.touchEndX = e.changedTouches[0].screenX;
-            const diffX = this.touchStartX - this.touchEndX;
-            if (Math.abs(diffX) > this.SWIPE_THRESHOLD) {
-              if (diffX > 0) {
-                this.handleSwipeNext();
+          this.slidesEl.addEventListener(
+            "touchend",
+            (e) => {
+              if (this.isAnimating || this.messageDisplay.isWordCloudPaused)
+                return;
+
+              this.touchEndX = e.changedTouches[0].screenX;
+              const diffX = this.touchStartX - this.touchEndX;
+
+              if (Math.abs(diffX) > this.SWIPE_THRESHOLD) {
+                if (diffX > 0) {
+                  this.handleSwipeNext();
+                }
               }
-            }
-          };
+            },
+            { passive: true },
+          );
 
           let mouseDownX = 0;
-          const mouseDownHandler = (e) => {
+          this.slidesEl.addEventListener("mousedown", (e) => {
             mouseDownX = e.clientX;
-          };
+          });
 
-          const mouseUpHandler = (e) => {
-            if (this.isAnimating || this.messageDisplay.isWordCloudPaused) return;
+          this.slidesEl.addEventListener("mouseup", (e) => {
+            if (this.isAnimating || this.messageDisplay.isWordCloudPaused)
+              return;
+
             const diffX = mouseDownX - e.clientX;
             if (Math.abs(diffX) > this.SWIPE_THRESHOLD && diffX > 0) {
               this.handleSwipeNext();
             }
-          };
-
-          this.slidesEl.addEventListener("touchstart", touchStartHandler, { passive: true });
-          this.slidesEl.addEventListener("touchend", touchEndHandler, { passive: true });
-          this.slidesEl.addEventListener("mousedown", mouseDownHandler);
-          this.slidesEl.addEventListener("mouseup", mouseUpHandler);
-
-          this.eventHandlers.set('touchstart', touchStartHandler);
-          this.eventHandlers.set('touchend', touchEndHandler);
-          this.eventHandlers.set('mousedown', mouseDownHandler);
-          this.eventHandlers.set('mouseup', mouseUpHandler);
-        }
-
-        removeEventListeners() {
-          if (!this.slidesEl) return;
-
-          for (const [event, handler] of this.eventHandlers) {
-            this.slidesEl.removeEventListener(event, handler);
-          }
-          this.eventHandlers.clear();
+          });
         }
 
         async handleSwipeNext() {
-          if (this.messageDisplay.nextButton && !this.messageDisplay.nextButton.disabled) {
+          if (
+            this.messageDisplay.nextButton &&
+            !this.messageDisplay.nextButton.disabled
+          ) {
             await window.nextSlide();
           }
         }
@@ -2245,28 +2232,19 @@
               return;
             }
 
-            this.clearWebSocketHandlers();
-
             const oldWs = this.ws;
             this.ws = null;
 
-            if (oldWs.readyState === WebSocket.OPEN || oldWs.readyState === WebSocket.CONNECTING) {
+            if (
+              oldWs.readyState === WebSocket.OPEN ||
+              oldWs.readyState === WebSocket.CONNECTING
+            ) {
               oldWs.onclose = () => resolve();
               oldWs.close();
             } else {
               resolve();
             }
           });
-        }
-
-        clearWebSocketHandlers() {
-          if (this.ws) {
-            this.ws.onopen = null;
-            this.ws.onmessage = null;
-            this.ws.onclose = null;
-            this.ws.onerror = null;
-          }
-          this.wsHandlers = {};
         }
 
         async waitForWebSocketConnection(timeout = 10000) {
@@ -2309,17 +2287,13 @@
               if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
               throw new Error("Slides not created");
             } else {
-              this.files = this.newMediaFiles.filter(file => 
-                !this.shownFiles.has(String(file.id))
-              );
+              this.files = [...this.newMediaFiles];
               if (!this.isLocalPhraseMode) {
                 this.currentPage = 1;
-                this.globalQueue = this.newMediaFiles.filter(file => 
-                  !this.shownFiles.has(String(file.id))
-                );
+                this.globalQueue = [...this.newMediaFiles];
                 await this.refreshFiles(true);
               }
-              this.checkInterval = setInterval(() => this.checkNewMediaFiles(), 150000);
+              setInterval(() => this.checkNewMediaFiles(), 150000);
               this.startMediaSwitchInterval();
               this.initWebSocket();
             }
@@ -2330,14 +2304,22 @@
 
         async preloadPermanentFile() {
           try {
-            const response = await fetch(`${API_BASE}/media-files?page=1&noCache=${Date.now()}`);
+            const response = await fetch(
+              `${API_BASE}/media-files?page=1&noCache=${Date.now()}`,
+            );
             if (!response.ok) {
-              throw new Error(`Request error /media-files?page=1: ${response.status}`);
+              throw new Error(
+                `Request error /media-files?page=1: ${response.status}`,
+              );
             }
             const permanentFiles = (await response.json()).slice(0, 1);
             if (permanentFiles.length > 0) {
               const file = permanentFiles[0];
-              if (!this.slides.some((slide) => slide.dataset.id === String(file.id))) {
+              if (
+                !this.slides.some(
+                  (slide) => slide.dataset.id === String(file.id),
+                )
+              ) {
                 this.createSlide(file, false);
                 this.permanentPreloaded = true;
               }
@@ -2348,15 +2330,14 @@
         }
 
         initWebSocket() {
-          this.clearWebSocketHandlers();
-
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             return;
           }
-
+          
           if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
             const connectionCheck = () => {
               if (!this.ws) return;
+              
               if (this.ws.readyState === WebSocket.OPEN) {
                 this.onWebSocketOpened();
               } else if (this.ws.readyState === WebSocket.CLOSED) {
@@ -2369,21 +2350,21 @@
             setTimeout(connectionCheck, 200);
             return;
           }
-
+          
           this.ws = new WebSocket("wss://0808.us.nekhebet.su:8080");
-
+          
           const connectionTimeout = setTimeout(() => {
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
               this.ws.close();
             }
           }, 8000);
-
-          const openHandler = () => {
+          
+          this.ws.onopen = () => {
             clearTimeout(connectionTimeout);
             this.onWebSocketOpened();
           };
-
-          const messageHandler = async (event) => {
+          
+          this.ws.onmessage = async (event) => {
             try {
               const data = JSON.parse(event.data);
               if (data.type === "new_media") {
@@ -2392,14 +2373,21 @@
                   file_type: data.file_type,
                   special_id: data.special_id,
                 });
-                if (this.slides.some((slide) => slide.dataset.id === String(data.id))) {
+                if (
+                  this.slides.some(
+                    (slide) => slide.dataset.id === String(data.id),
+                  )
+                ) {
                   this.newMediaQueue.push({
                     id: data.id,
                     mtime: data.mtime || new Date().toISOString(),
                     file_type: data.file_type,
                     special_id: data.special_id,
                   });
-                  if (data.special_id !== undefined && data.special_id !== null) {
+                  if (
+                    data.special_id !== undefined &&
+                    data.special_id !== null
+                  ) {
                     this.priorityQueue.push({
                       id: data.id,
                       mtime: data.mtime || new Date().toISOString(),
@@ -2411,29 +2399,18 @@
               }
             } catch (error) {}
           };
-
-          const closeHandler = () => {
+          
+          this.ws.onclose = () => {
             clearTimeout(connectionTimeout);
             this.ws = null;
+            
             setTimeout(() => {
               this.initWebSocket();
             }, 8000);
           };
-
-          const errorHandler = (error) => {
+          
+          this.ws.onerror = (error) => {
             clearTimeout(connectionTimeout);
-          };
-
-          this.ws.onopen = openHandler;
-          this.ws.onmessage = messageHandler;
-          this.ws.onclose = closeHandler;
-          this.ws.onerror = errorHandler;
-
-          this.wsHandlers = {
-            open: openHandler,
-            message: messageHandler,
-            close: closeHandler,
-            error: errorHandler
           };
         }
 
@@ -2441,9 +2418,7 @@
           this.messageDisplay.updatePauseButton();
           if (this.mediaErrorEl) this.mediaErrorEl.style.display = "none";
           this.refreshFiles(true).then(() => {
-            this.newMediaQueue = this.newMediaFiles.filter(file => 
-              !this.shownFiles.has(String(file.id))
-            );
+            this.newMediaQueue = [...this.newMediaFiles];
             this.newMediaQueue.sort(
               (a, b) =>
                 new Date(b.mtime || new Date()).getTime() -
@@ -2475,10 +2450,10 @@
             if (!response.ok) {
               throw new Error(`Error /new-media-files: ${response.status}`);
             }
-            const allFiles = await response.json();
-            this.newMediaFiles = allFiles
-              .filter(file => !this.shownFiles.has(String(file.id)))
-              .slice(0, this.MAX_FILES);
+            this.newMediaFiles = (await response.json()).slice(
+              0,
+              this.MAX_FILES,
+            );
           } catch (error) {
             console.error("loadNewMediaFiles failed:", error);
           }
@@ -2501,15 +2476,6 @@
           }
         }
 
-        startCleanupInterval() {
-          if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-          }
-          this.cleanupInterval = setInterval(() => {
-            this.performCleanup();
-          }, 5 * 60 * 1000);
-        }
-
         async switchToNormalMode() {
           if (this.isAnimating) {
             await new Promise((resolve) => setTimeout(resolve, 200));
@@ -2521,18 +2487,10 @@
           this.slides.forEach((slide) => this.removeSlide(slide));
           this.slides = [];
           this.currentIndex = -1;
-          this.newMediaQueue = this.newMediaFiles.filter(file => 
-            !this.shownFiles.has(String(file.id))
-          );
-          this.priorityQueue = this.priorityQueue.filter(file => 
-            !this.shownFiles.has(String(file.id))
-          );
-          this.globalQueue = this.newMediaFiles.filter(file => 
-            !this.shownFiles.has(String(file.id))
-          );
-          this.files = this.newMediaFiles.filter(file => 
-            !this.shownFiles.has(String(file.id))
-          );
+          this.newMediaQueue = [];
+          this.priorityQueue = [];
+          this.globalQueue = [];
+          this.files = [];
           this.currentPage = 1;
           await this.refreshFiles(true);
           if (this.slides.length === 0) {
@@ -2549,26 +2507,23 @@
               return;
             }
             this.lastFullRefresh = now;
-            
             if (this.isLocalPhraseMode) {
               await this.loadNewMediaFiles();
               const existingIds = new Set(
                 this.slides.map((slide) => String(slide.dataset.id)),
               );
-              
               this.newMediaFiles.forEach((file) => {
-                if (!existingIds.has(String(file.id)) && !this.shownFiles.has(String(file.id))) {
+                if (!existingIds.has(String(file.id))) {
                   this.createSlide(file);
                 }
               });
-              
               const newIds = new Set(
-                this.newMediaFiles.map((f) => String(f.id))
+                this.newMediaFiles.map((f) => String(f.id)),
               );
               this.slides = this.slides.filter((slide) => {
                 if (!slide || !slide.dataset || !slide.dataset.id) return false;
                 const slideId = String(slide.dataset.id);
-                if (!newIds.has(slideId) || this.shownFiles.has(slideId)) {
+                if (!newIds.has(slideId)) {
                   if (
                     !(
                       this.messageDisplay.isPaused &&
@@ -2576,19 +2531,15 @@
                       this.slides[this.currentIndex]?.dataset.id === slideId
                     )
                   ) {
-                    this.removeSlide(slide);
+                    slide.remove();
                   }
                   return false;
                 }
                 return true;
               });
-              
-              this.files = this.newMediaFiles.filter(file => 
-                !this.shownFiles.has(String(file.id))
-              );
+              this.files = [...this.newMediaFiles];
               return;
             }
-            
             const response = await fetch(
               `${API_BASE}/media-files?page=${this.currentPage}&noCache=${Date.now()}`,
             );
@@ -2597,9 +2548,8 @@
                 `Request error /media-files?page=${this.currentPage}: ${response.status}`,
               );
             }
-            
             let newFiles = (await response.json()).slice(0, this.MAX_FILES);
-            
+
             if (newFiles.length === 0 && this.currentPage > 1) {
               this.currentPage = 1;
               const fallbackResponse = await fetch(
@@ -2610,16 +2560,17 @@
                   `Request error /media-files?page=${this.currentPage}: ${fallbackResponse.status}`,
                 );
               }
-              newFiles = (await fallbackResponse.json()).slice(0, this.MAX_FILES);
+              newFiles = (await fallbackResponse.json()).slice(
+                0,
+                this.MAX_FILES,
+              );
             }
-            
-            newFiles = newFiles.filter(file => !this.shownFiles.has(String(file.id)));
-            
-            const existingIds = this.getAllQueuedIds();
+            const existingIds = new Set(
+              this.globalQueue.map((f) => String(f.id)),
+            );
             newFiles = newFiles.filter(
               (file) => !existingIds.has(String(file.id)),
             );
-            
             newFiles.forEach((file) => {
               if (
                 !this.slides.some(
@@ -2627,61 +2578,28 @@
                 )
               ) {
                 this.createSlide(file);
+                if (["jpg", "jfif", "png", "gif"].includes(file.file_type)) {
+                  const img = new Image();
+                  img.src = `${API_BASE}/media/${file.id}`;
+                  img.loading = this.globalQueue.length <= 2 ? "eager" : "lazy";
+                } else if (["mp4", "webm", "mov"].includes(file.file_type)) {
+                  const video = document.createElement("video");
+                  video.src = `${API_BASE}/media/${file.id}`;
+                  video.preload =
+                    this.globalQueue.length <= 2 ? "auto" : "metadata";
+                }
               }
             });
-
-            this.files = [...this.files, ...newFiles]
-              .filter(file => !this.shownFiles.has(String(file.id)))
-              .slice(-this.MAX_FILES);
-              
-            this.globalQueue = [...this.globalQueue, ...newFiles]
-              .filter(file => !this.shownFiles.has(String(file.id)));
-            
-            this.trimDataArrays();
+            this.files = [...this.files, ...newFiles].slice(-this.MAX_FILES);
+            this.globalQueue.push(...newFiles);
           } catch (error) {
             if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
           }
         }
 
-        getAllQueuedIds() {
-          const ids = new Set();
-          this.globalQueue.forEach(f => ids.add(String(f.id)));
-          this.priorityQueue.forEach(f => ids.add(String(f.id)));
-          this.newMediaQueue.forEach(f => ids.add(String(f.id)));
-          this.files.forEach(f => ids.add(String(f.id)));
-          this.newMediaFiles.forEach(f => ids.add(String(f.id)));
-          return ids;
-        }
-
-        getActiveQueuedIds() {
-          const ids = new Set();
-          this.globalQueue.forEach(f => ids.add(String(f.id)));
-          this.priorityQueue.forEach(f => ids.add(String(f.id)));
-          return ids;
-        }
-
         removeSlide(slide) {
           const index = this.slides.findIndex((s) => s === slide);
           if (index !== -1) {
-            const slideId = slide.dataset.id;
-
-            const handlers = this.slideData.get(slide);
-            if (handlers) {
-              const media = slide.querySelector("img, video");
-              if (media) {
-                if (handlers.error && media.onerror === handlers.error) {
-                  media.onerror = null;
-                }
-                if (handlers.click) {
-                  media.removeEventListener("click", handlers.click);
-                }
-                if (handlers.loadedmetadata) {
-                  media.removeEventListener("loadedmetadata", handlers.loadedmetadata);
-                }
-              }
-              this.slideData.delete(slide);
-            }
-
             const media = slide.querySelector("img, video");
             if (media) {
               if (media.tagName === "VIDEO") {
@@ -2693,120 +2611,13 @@
                 media.src = "";
               }
             }
-
             delete slide.dataset.dimensions;
-            
             slide.remove();
             this.slides.splice(index, 1);
-            
-            if (this.currentIndex >= index && this.currentIndex > 0) {
-              this.currentIndex--;
-            }
-          }
-        }
-
-        removeSlideFromQueues(slideId) {
-          [this.globalQueue, this.priorityQueue, this.newMediaQueue, this.files, this.newMediaFiles]
-            .forEach(queue => {
-              for (let i = queue.length - 1; i >= 0; i--) {
-                if (String(queue[i].id) === slideId) {
-                  queue.splice(i, 1);
-                }
-              }
-            });
-        }
-
-        cleanupOldSlides() {
-          if (this.slides.length <= this.MIN_SLIDES_TO_KEEP) return;
-
-          const keepIds = new Set();
-
-          if (this.currentIndex !== -1) {
-            const currentSlide = this.slides[this.currentIndex];
-            if (currentSlide && currentSlide.dataset.id) {
-              keepIds.add(currentSlide.dataset.id);
-            }
-          }
-
-          const upcomingSlides = Math.min(30, this.globalQueue.length);
-          for (let i = 0; i < upcomingSlides; i++) {
-            const file = this.globalQueue[i];
-            if (file && !this.shownFiles.has(String(file.id))) {
-              keepIds.add(String(file.id));
-            }
-          }
-
-          this.priorityQueue.forEach(file => {
-            if (!this.shownFiles.has(String(file.id))) {
-              keepIds.add(String(file.id));
-            }
-          });
-
-          for (let i = this.slides.length - 1; i >= 0; i--) {
-            const slide = this.slides[i];
-            const slideId = slide.dataset.id;
-
-            if (i === this.currentIndex) continue;
-
-            if (!keepIds.has(slideId) && this.slides.length > this.MIN_SLIDES_TO_KEEP) {
-              this.removeSlide(slide);
-            }
-          }
-        }
-
-        trimDataArrays() {
-
-          const keepIds = new Set();
-
-          const upcomingToKeep = Math.min(this.MAX_DATA_ITEMS, this.globalQueue.length);
-          for (let i = 0; i < upcomingToKeep; i++) {
-            if (this.globalQueue[i]) {
-              keepIds.add(String(this.globalQueue[i].id));
-            }
-          }
-
-          this.priorityQueue.forEach(file => {
-            keepIds.add(String(file.id));
-          });
-
-          [this.files, this.newMediaQueue, this.priorityQueue, this.globalQueue, this.newMediaFiles]
-            .forEach(queue => {
-
-              for (let i = queue.length - 1; i >= 0; i--) {
-                if (this.shownFiles.has(String(queue[i].id))) {
-                  queue.splice(i, 1);
-                }
-              }
-
-              if (queue.length > this.MAX_DATA_ITEMS) {
-                queue.splice(0, queue.length - this.MAX_DATA_ITEMS);
-              }
-            });
-        }
-
-        performCleanup() {
-          this.cleanupOldSlides();
-
-          this.trimDataArrays();
-
-          if (this.shownFiles.size > 1000) {
-            const newShownFiles = new Set();
-
-            Array.from(this.shownFiles).slice(-500).forEach(id => newShownFiles.add(id));
-            this.shownFiles = newShownFiles;
-          }
-
-          if (window.gc) {
-            setTimeout(() => window.gc(), 100);
           }
         }
 
         createSlide({ id, file_type, special_id }, prepend = false) {
-
-          if (this.shownFiles.has(String(id))) {
-            return;
-          }
-
           const existingSlide = this.slides.find(
             (slide) => slide?.dataset?.id === String(id),
           );
@@ -2827,14 +2638,13 @@
           slide.dataset.id = String(id);
           slide.dataset.special_id =
             special_id !== undefined ? String(special_id) : null;
-            
+
           const mediaContainer = document.createElement("div");
           mediaContainer.className = "media-container";
-          
+
           let mediaCreated = false;
           const isActiveOrNext =
             this.currentIndex === -1 || this.slides.length <= 2;
-            
           const handleError = () => {
             this.removeSlide(slide);
             if (this.retryCount < 3) {
@@ -2844,20 +2654,15 @@
               this.mediaErrorEl.classList.add("visible");
             }
           };
-          
+
           try {
             if (["jpg", "jfif", "png", "gif"].includes(file_type)) {
               const img = document.createElement("img");
               img.src = `${API_BASE}/media/${id}`;
               img.loading = isActiveOrNext ? "eager" : "lazy";
-              
-              const errorHandler = handleError.bind(this);
-              img.onerror = errorHandler;
-              
+              img.onerror = handleError.bind(this);
               mediaContainer.appendChild(img);
               mediaCreated = true;
-              
-              this.slideData.set(slide, { error: errorHandler });
             } else if (["mp4", "webm", "mov"].includes(file_type)) {
               const video = document.createElement("video");
               video.src = `${API_BASE}/media/${id}`;
@@ -2866,55 +2671,40 @@
               video.playsInline = true;
               video.loading = isActiveOrNext ? "auto" : "lazy";
               video.preload = isActiveOrNext ? "eager" : "metadata";
+
               if (!this.isLocalPhraseMode) {
                 video.controls = true;
               }
-              
-              const loadedHandler = () => {
+
+              video.addEventListener("loadedmetadata", () => {
                 if (this.slides[this.currentIndex]?.dataset.id === id) {
                   video.play().catch((err) => {
                     setTimeout(() => video.play().catch(() => {}), 500);
                   });
                 }
-              };
-              
-              const clickHandler = (event) => {
+              });
+
+              video.onerror = handleError.bind(this);
+              video.addEventListener("click", (event) => {
                 if (!this.isLocalPhraseMode) {
                   event.preventDefault();
                   this.toggleVideoSound(video, slide);
                 }
-              };
-              
-              const errorHandler = handleError.bind(this);
-              
-              video.addEventListener("loadedmetadata", loadedHandler);
-              video.addEventListener("click", clickHandler);
-              video.onerror = errorHandler;
-              
+              });
+
               mediaContainer.appendChild(video);
               mediaCreated = true;
-              
-              this.slideData.set(slide, {
-                loadedmetadata: loadedHandler,
-                click: clickHandler,
-                error: errorHandler
-              });
             } else if (file_type === "json") {
               const lottie = document.createElement("lottie-player");
               lottie.src = `${API_BASE}/media/${id}`;
               lottie.autoplay = true;
               lottie.loop = true;
               lottie.loading = isActiveOrNext ? "eager" : "lazy";
-              
-              const errorHandler = handleError.bind(this);
-              lottie.addEventListener("error", errorHandler);
-              
+              lottie.addEventListener("error", handleError.bind(this));
               mediaContainer.appendChild(lottie);
               mediaCreated = true;
-              
-              this.slideData.set(slide, { error: errorHandler });
             }
-            
+
             if (mediaCreated) {
               slide.appendChild(mediaContainer);
               if (prepend) {
@@ -2931,169 +2721,110 @@
           }
         }
 
-        async nextSlide(isManual = false) {
-          if (this.isAnimating || this.messageDisplay.isWordCloudPaused) {
-            return;
-          }
-          if (
-            (this.messageDisplay.isPaused ||
-              this.messageDisplay.isWordCloudPaused) &&
-            !isManual
-          ) {
-            return;
-          }
-          
-          if (this.slides.length === 0) {
-            await this.refreshFiles(true);
-            if (this.slides.length === 0) {
-              await this.loadNewMediaFiles();
-              this.newMediaFiles.forEach(({ id, mtime, file_type }) => {
-                this.createSlide({ id, mtime, file_type });
-              });
-              if (!this.isLocalPhraseMode) {
-                this.globalQueue = this.newMediaFiles.filter(file => 
-                  !this.shownFiles.has(String(file.id))
-                );
-                this.currentPage = 1;
+        cleanupOldSlides() {
+            if (this.slides.length > this.MAX_SLIDES) {
+              const excess = this.slides.length - this.MAX_SLIDES;
+              for (let i = 0; i < excess; i++) {
+                const oldSlide = this.slides.shift();
+                if (oldSlide && oldSlide.parentNode) {
+                  oldSlide.remove();
+                }
+              }
+              if (this.files && Array.isArray(this.files)) {
+                this.files.splice(0, excess);
               }
             }
-            if (this.slides.length === 0) {
-              if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
+          }
+
+        async nextSlide(isManual = false) {
+            if (this.isAnimating || this.messageDisplay.isWordCloudPaused) {
               return;
             }
-          }
-          
-          if (!isManual && this.skipNextAutoSlide) {
-            this.skipNextAutoSlide = false;
-            this.ignoreNextMessageSlide = true;
-            return;
-          }
-          
-          if (
-            this.isLocalPhraseMode &&
-            this.messageDisplay.queue.length === 0 &&
-            !isManual
-          ) {
-            return;
-          }
-          
-          if (
-            !isManual &&
-            this.lastManualSwitch &&
-            Date.now() - this.lastManualSwitch < 1500
-          ) {
-            return;
-          }
-          
-          if (!isManual && Date.now() - this.lastWebSocketSwitch < 500) {
-            return;
-          }
-          
-          if (!isManual) {
-            this.lastWebSocketSwitch = Date.now();
-          }
-
-          if (!this.isLocalPhraseMode && this.priorityQueue.length > 0) {
-            let attempts = 3;
-            while (this.priorityQueue.length > 0 && attempts > 0) {
-              const nextFile = this.priorityQueue[0];
-
-              if (this.shownFiles.has(String(nextFile.id))) {
-                this.priorityQueue.shift();
-                continue;
+            if (
+              (this.messageDisplay.isPaused ||
+                this.messageDisplay.isWordCloudPaused) &&
+              !isManual
+            ) {
+              return;
+            }
+            if (this.slides.length === 0) {
+              await this.refreshFiles(true);
+              if (this.slides.length === 0) {
+                await this.loadNewMediaFiles();
+                this.newMediaFiles.forEach(({ id, mtime, file_type }) => {
+                  this.createSlide({ id, mtime, file_type });
+                });
+                if (!this.isLocalPhraseMode) {
+                  this.globalQueue = [...this.newMediaFiles];
+                  this.currentPage = 1;
+                }
               }
-              
-              let nextIndex = this.slides.findIndex(
-                (slide) => String(slide.dataset.id) === String(nextFile.id),
-              );
-              
-              if (nextIndex === -1) {
-                await new Promise((resolve) => setTimeout(resolve, 300));
-                nextIndex = this.slides.findIndex(
+              if (this.slides.length === 0) {
+                if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
+                return;
+              }
+            }
+            if (!isManual && this.skipNextAutoSlide) {
+              this.skipNextAutoSlide = false;
+              this.ignoreNextMessageSlide = true;
+              return;
+            }
+            if (
+              this.isLocalPhraseMode &&
+              this.messageDisplay.queue.length === 0 &&
+              !isManual
+            ) {
+              return;
+            }
+            if (
+              !isManual &&
+              this.lastManualSwitch &&
+              Date.now() - this.lastManualSwitch < 1500
+            ) {
+              return;
+            }
+            if (!isManual && Date.now() - this.lastWebSocketSwitch < 500) {
+              return;
+            }
+            if (!isManual) {
+              this.lastWebSocketSwitch = Date.now();
+            }
+            if (!this.isLocalPhraseMode && this.priorityQueue.length > 0) {
+              let attempts = 3;
+              while (this.priorityQueue.length > 0 && attempts > 0) {
+                const nextFile = this.priorityQueue[0];
+                let nextIndex = this.slides.findIndex(
                   (slide) => String(slide.dataset.id) === String(nextFile.id),
                 );
                 if (nextIndex === -1) {
-                  attempts--;
-                  continue;
+                  await new Promise((resolve) => setTimeout(resolve, 300));
+                  nextIndex = this.slides.findIndex(
+                    (slide) => String(slide.dataset.id) === String(nextFile.id),
+                  );
+                  if (nextIndex === -1) {
+                    attempts--;
+                    continue;
+                  }
                 }
+                this.priorityQueue.shift();
+                await this.showSlide(nextIndex);
+                this.cleanupOldSlides();
+                return;
               }
-              
-              this.priorityQueue.shift();
-              await this.showSlide(nextIndex);
-              return;
             }
-          }
-          
-          let nextIndex = await this.selectNextIndex();
-          
-          if (nextIndex === -1 && !this.isLocalPhraseMode) {
-            if (this.globalQueue.length < 10) {
+            let nextIndex = await this.selectNextIndex();
+            if (nextIndex === -1 && !this.isLocalPhraseMode) {
               this.currentPage++;
               await this.refreshFiles(true);
+              nextIndex = await this.selectNextIndex();
             }
-            nextIndex = await this.selectNextIndex();
-          }
-          
-          if (nextIndex !== -1) {
-            await this.showSlide(nextIndex);
-          } else {
-            if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
-          }
-        }
-
-        async selectNextIndex() {
-          // Пропускаем уже показанные файлы в начале очереди
-          while (this.globalQueue.length > 0 && this.shownFiles.has(String(this.globalQueue[0].id))) {
-            this.globalQueue.shift();
-          }
-          
-          if (this.globalQueue.length === 0) {
-            if (this.isLocalPhraseMode) {
-              this.globalQueue = this.newMediaFiles.filter(file => 
-                !this.shownFiles.has(String(file.id))
-              );
+            if (nextIndex !== -1) {
+              await this.showSlide(nextIndex);
+              this.cleanupOldSlides();
             } else {
-              this.currentPage = 1;
-              await this.refreshFiles(true);
-              return await this.selectNextIndex();
+              if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
             }
           }
-          
-          if (this.globalQueue.length === 0) {
-            if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
-            return -1;
-          }
-          
-          const nextFile = this.globalQueue[0];
-
-          if (this.shownFiles.has(String(nextFile.id))) {
-            this.globalQueue.shift();
-            return await this.selectNextIndex();
-          }
-          
-          const nextIndex = this.slides.findIndex(
-            (slide) => String(slide.dataset.id) === String(nextFile.id),
-          );
-          
-          if (nextIndex === -1) {
-
-            if (!this.isLocalPhraseMode) {
-              this.createSlide(nextFile);
-              const newIndex = this.slides.findIndex(
-                (slide) => String(slide.dataset.id) === String(nextFile.id),
-              );
-              if (newIndex !== -1) {
-                this.globalQueue.shift();
-                return newIndex;
-              }
-            }
-
-            this.globalQueue.shift();
-            return await this.selectNextIndex();
-          }
-          
-          this.globalQueue.shift();
-          return nextIndex;
         }
 
         toggleVideoSound(video, slide) {
@@ -3115,183 +2846,6 @@
           } else {
             if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
           }
-        }
-
-        async showSlide(nextIndex) {
-          if (this.isAnimating || this.messageDisplay.isWordCloudPaused) {
-            return;
-          }
-          
-          if (nextIndex === this.currentIndex) {
-            this.isAnimating = false;
-            return;
-          }
-          
-          this.isAnimating = true;
-          
-          try {
-            if (nextIndex === -1 || !this.slides[nextIndex]) {
-              if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
-              this.isAnimating = false;
-              return;
-            }
-            
-            await this.hideAllSlides();
-            
-            const SLIDE_ANIMATION_DURATION = 500;
-            this.currentIndex = nextIndex;
-            const nextSlide = this.slides[this.currentIndex];
-            const media = nextSlide.querySelector("img, video, lottie-player");
-            
-            if (nextSlide.dataset.special_id == 1) {
-              await this.doubleFlashScreen();
-            }
-            
-            if (media && media.tagName === "VIDEO") {
-              if (media.paused) {
-                media.play().catch((err) => {});
-              }
-            }
-            
-            nextSlide.style.transition = `opacity ${SLIDE_ANIMATION_DURATION}ms ease`;
-            nextSlide.style.visibility = "visible";
-            nextSlide.classList.add("visible");
-            nextSlide.style.opacity = "0";
-            
-            await new Promise((resolve) => {
-              if (this.messageDisplay.isWordCloudPaused) {
-                this.isAnimating = false;
-                resolve();
-                return;
-              }
-              
-              const timeoutId = setTimeout(resolve, SLIDE_ANIMATION_DURATION + 200);
-              nextSlide.addEventListener(
-                "transitionend",
-                () => {
-                  clearTimeout(timeoutId);
-                  if (media && media.tagName === "VIDEO" && media.paused) {
-                    media.play().catch(() => {});
-                  }
-                  resolve();
-                },
-                { once: true },
-              );
-              nextSlide.style.opacity = "1";
-            });
-            
-            const slideId = nextSlide.dataset.id;
-
-            this.shownFiles.add(slideId);
-
-            this.removeSlideFromQueues(slideId);
-
-            this.cleanupOldSlides();
-            
-          } catch (error) {
-          } finally {
-            this.isAnimating = false;
-          }
-        }
-
-        hideAllSlides(duration = 200) {
-          const validSlides = this.slides.filter(
-            (slide) => slide && slide.style && slide.parentNode,
-          );
-          
-          return new Promise((resolve) => {
-            let hiddenCount = 0;
-            const totalSlides = validSlides.length;
-            
-            if (totalSlides === 0) {
-              resolve();
-              return;
-            }
-            
-            validSlides.forEach((slide) => {
-              try {
-                const video = slide.querySelector("video");
-                if (video) {
-                  video.pause();
-                  video.currentTime = 0;
-                  video.muted = true;
-                }
-                
-                slide.style.transition = `opacity ${duration}ms ease`;
-                slide.style.opacity = "0";
-                slide.style.visibility = "hidden";
-                slide.classList.remove("visible");
-                
-                setTimeout(() => {
-                  hiddenCount++;
-                  if (hiddenCount === totalSlides) resolve();
-                }, duration);
-              } catch (e) {
-                hiddenCount++;
-                if (hiddenCount === totalSlides) resolve();
-              }
-            });
-          });
-        }
-
-        stopAnimations(preserveCurrent = false) {
-          this.isAnimating = false;
-          this.slides.forEach((slide) => {
-            if (slide && slide.style) {
-              slide.style.transition = "";
-              if (
-                !preserveCurrent ||
-                slide !== this.slides[this.currentIndex]
-              ) {
-                slide.style.opacity = "0";
-                slide.style.visibility = "hidden";
-                slide.classList.remove("visible");
-                const video = slide.querySelector("video");
-                if (video) {
-                  video.pause();
-                  video.muted = true;
-                }
-              }
-            }
-          });
-        }
-
-        destroy() {
-          this.removeEventListeners();
-          
-          if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = null;
-          }
-          
-          if (this.checkInterval) {
-            clearInterval(this.checkInterval);
-            this.checkInterval = null;
-          }
-          
-          this.stopMediaSwitchInterval();
-          
-          this.clearWebSocketHandlers();
-          if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-          }
-          
-          this.slides.forEach(slide => this.removeSlide(slide));
-          this.slides = [];
-          this.slideData = new WeakMap();
-          
-          this.files = [];
-          this.globalQueue = [];
-          this.priorityQueue = [];
-          this.newMediaQueue = [];
-          this.newMediaFiles = [];
-          this.shownFiles.clear();
-          
-          this.slidesEl = null;
-          this.mediaErrorEl = null;
-          this.contentEl = null;
-          this.flashEl = null;
         }
 
         getMediaDimensions(slide) {
@@ -3364,39 +2918,33 @@
           const now = new Date();
           if (now - this.lastCheckTime < 150000) return null;
           this.lastCheckTime = now;
-          
           try {
             const response = await fetch(
               "https://0808.us.nekhebet.su:8080/new-media-files",
             );
             if (!response.ok) throw new Error("Error loading new files");
-            
-            const allFiles = await response.json();
-            const existingIds = this.getAllQueuedIds();
-            
-            const addedFiles = allFiles.filter(
-              (file) => !existingIds.has(String(file.id)) && !this.shownFiles.has(String(file.id)),
+            const newFiles = await response.json();
+            const existingIds = new Set(this.newMediaFiles.map((f) => f.id));
+            const addedFiles = newFiles.filter(
+              (file) => !existingIds.has(file.id),
             );
-            
             if (addedFiles.length > 0) {
               const spaceAvailable = this.MAX_FILES - this.newMediaFiles.length;
               const filesToAdd = addedFiles.slice(0, spaceAvailable);
-              
               if (this.isLocalPhraseMode) {
                 filesToAdd.forEach((file) => {
                   this.createSlide(file);
                   this.newMediaFiles.push(file);
                   if (!this.newMediaQueue.some((f) => f.id === file.id)) {
                     this.newMediaQueue.push(file);
+                    this.newMediaQueue.sort(
+                      (a, b) => new Date(b.mtime) - new Date(a.mtime),
+                    );
                   }
                   if (this.currentIndex === -1) {
                     this.show();
                   }
                 });
-                
-                this.newMediaQueue.sort(
-                  (a, b) => new Date(b.mtime) - new Date(a.mtime),
-                );
               } else {
                 filesToAdd.forEach((file) => {
                   this.createSlide(file);
@@ -3407,12 +2955,10 @@
                   }
                 });
               }
-              
               this.newMediaFiles = [...this.newMediaFiles, ...filesToAdd];
               this.newMediaFiles.sort(
                 (a, b) => new Date(b.mtime) - new Date(a.mtime),
               );
-              
               if (this.newMediaFiles.length > this.MAX_FILES) {
                 const filesToRemove = this.newMediaFiles.splice(this.MAX_FILES);
                 filesToRemove.forEach((file) => {
@@ -3429,13 +2975,21 @@
                         index === this.currentIndex
                       )
                     ) {
-                      this.removeSlide(this.slides[index]);
+                      this.slides[index].remove();
+                      this.slides.splice(index, 1);
                     }
                   }
-                  this.removeSlideFromQueues(String(file.id));
+                  this.newMediaQueue = this.newMediaQueue.filter(
+                    (f) => f.id !== file.id,
+                  );
+                  this.priorityQueue = this.priorityQueue.filter(
+                    (f) => f.id !== file.id,
+                  );
+                  this.globalQueue = this.globalQueue.filter(
+                    (f) => f.id !== file.id,
+                  );
                 });
               }
-              
               return filesToAdd;
             }
             return null;
@@ -3445,10 +2999,6 @@
         }
 
         addNewMedia(file) {
-          if (this.shownFiles.has(String(file.id))) {
-            return;
-          }
-
           if (
             this.newMediaFiles.some(
               (f) => f.id === file.id && f.mtime === file.mtime,
@@ -3469,7 +3019,6 @@
                 ? { ...f, special_id: file.special_id }
                 : f,
             );
-            
             if (
               file.special_id !== undefined &&
               !this.priorityQueue.some(
@@ -3485,7 +3034,6 @@
             }
             return;
           }
-          
           if (this.isLocalPhraseMode) {
             if (this.newMediaFiles.length >= this.MAX_FILES) {
               const fileToRemove = this.newMediaFiles.shift();
@@ -3493,14 +3041,18 @@
                 (slide) => slide.dataset.id === String(fileToRemove.id),
               );
               if (index !== -1) {
-                this.removeSlide(this.slides[index]);
+                this.slides[index].remove();
+                this.slides.splice(index, 1);
               }
-              this.removeSlideFromQueues(String(fileToRemove.id));
+              this.newMediaQueue = this.newMediaQueue.filter(
+                (item) => item.id !== fileToRemove.id,
+              );
+              this.priorityQueue = this.priorityQueue.filter(
+                (item) => item.id !== fileToRemove.id,
+              );
             }
-            
             this.createSlide(file);
             this.newMediaFiles.push(file);
-            
             if (
               !this.newMediaQueue.some(
                 (item) => item.id === file.id && item.mtime === file.mtime,
@@ -3516,7 +3068,6 @@
                 (a, b) => new Date(b.mtime) - new Date(a.mtime),
               );
             }
-            
             if (
               file.special_id !== undefined &&
               !this.priorityQueue.some(
@@ -3530,7 +3081,6 @@
                 special_id: file.special_id,
               });
             }
-            
             if (this.currentIndex === -1) {
               this.show();
             }
@@ -3555,15 +3105,23 @@
                     index === this.currentIndex
                   )
                 ) {
-                  this.removeSlide(this.slides[index]);
+                  this.slides[index].remove();
+                  this.slides.splice(index, 1);
                 }
-                this.removeSlideFromQueues(String(fileToRemove.id));
+                this.files = this.files.filter((f) => f.id !== fileToRemove.id);
+                this.newMediaQueue = this.newMediaQueue.filter(
+                  (item) => item.id !== fileToRemove.id,
+                );
+                this.priorityQueue = this.priorityQueue.filter(
+                  (item) => item.id !== fileToRemove.id,
+                );
+                this.globalQueue = this.globalQueue.filter(
+                  (item) => item.id !== fileToRemove.id,
+                );
               }
             }
-            
             this.createSlide(file);
             this.files.push(file);
-            
             if (
               !this.newMediaQueue.some(
                 (item) => item.id === file.id && item.mtime === file.mtime,
@@ -3576,7 +3134,6 @@
                 special_id: file.special_id,
               });
             }
-            
             if (
               file.special_id !== undefined &&
               !this.priorityQueue.some(
@@ -3590,7 +3147,6 @@
                 special_id: file.special_id,
               });
             }
-            
             if (
               !this.globalQueue.some(
                 (f) => f.id === file.id && f.mtime === file.mtime,
@@ -3604,6 +3160,174 @@
               });
             }
           }
+        }
+
+        async selectNextIndex() {
+          if (!this.isLocalPhraseMode && this.priorityQueue.length > 0) {
+            const nextFile = this.priorityQueue[0];
+            const nextIndex = this.slides.findIndex(
+              (slide) => String(slide.dataset.id) === String(nextFile.id),
+            );
+            if (nextIndex !== -1) {
+              this.priorityQueue.shift();
+              this.globalQueue = this.globalQueue.filter(
+                (f) => f.id !== nextFile.id || f.mtime !== nextFile.mtime,
+              );
+              return nextIndex;
+            }
+          }
+          if (this.globalQueue.length <= 10 && !this.isLocalPhraseMode) {
+            this.currentPage++;
+            await this.refreshFiles(true).catch((error) => {});
+          }
+          if (this.globalQueue.length === 0) {
+            if (this.isLocalPhraseMode) {
+              this.globalQueue = [...this.newMediaFiles];
+            } else {
+              this.currentPage = 1;
+              await this.refreshFiles(true);
+            }
+          }
+          if (this.globalQueue.length === 0) {
+            if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
+            return -1;
+          }
+          const nextFile = this.globalQueue.shift();
+          const nextIndex = this.slides.findIndex(
+            (slide) => String(slide.dataset.id) === String(nextFile.id),
+          );
+          if (nextIndex === -1) {
+            return await this.selectNextIndex();
+          }
+          return nextIndex;
+        }
+
+        async showSlide(nextIndex) {
+          if (this.isAnimating || this.messageDisplay.isWordCloudPaused) {
+            return;
+          }
+          if (nextIndex === this.currentIndex) {
+            this.isAnimating = false;
+            return;
+          }
+          this.isAnimating = true;
+          try {
+            if (nextIndex === -1 || !this.slides[nextIndex]) {
+              if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
+              this.isAnimating = false;
+              return;
+            }
+            await this.hideAllSlides();
+            const SLIDE_ANIMATION_DURATION = 500;
+            this.currentIndex = nextIndex;
+            const nextSlide = this.slides[this.currentIndex];
+            const media = nextSlide.querySelector("img, video, lottie-player");
+            if (nextSlide.dataset.special_id == 1) {
+              await this.doubleFlashScreen();
+            }
+            if (media && media.tagName === "VIDEO") {
+              if (media.paused) {
+                media.play().catch((err) => {});
+              }
+            }
+            nextSlide.style.transition = `opacity ${SLIDE_ANIMATION_DURATION}ms ease`;
+            nextSlide.style.visibility = "visible";
+            nextSlide.classList.add("visible");
+            nextSlide.style.opacity = "0";
+            await new Promise((resolve) => {
+              if (this.messageDisplay.isWordCloudPaused) {
+                this.isAnimating = false;
+                resolve();
+                return;
+              }
+              const timeoutId = setTimeout(
+                resolve,
+                SLIDE_ANIMATION_DURATION + 200,
+              );
+              nextSlide.addEventListener(
+                "transitionend",
+                () => {
+                  clearTimeout(timeoutId);
+                  if (media && media.tagName === "VIDEO" && media.paused) {
+                    media.play().catch(() => {});
+                  }
+                  resolve();
+                },
+                { once: true },
+              );
+              nextSlide.style.opacity = "1";
+            });
+            const slideId = nextSlide.dataset.id;
+            this.priorityQueue = this.priorityQueue.filter(
+              (f) => String(f.id) !== slideId,
+            );
+            this.globalQueue = this.globalQueue.filter(
+              (f) => String(f.id) !== slideId,
+            );
+            this.newMediaQueue = this.newMediaQueue.filter(
+              (f) => String(f.id) !== slideId,
+            );
+          } catch (error) {
+          } finally {
+            this.isAnimating = false;
+          }
+        }
+
+        hideAllSlides(duration = 200) {
+          const validSlides = this.slides.filter(
+            (slide) => slide && slide.style && slide.parentNode,
+          );
+          return new Promise((resolve) => {
+            let hiddenCount = 0;
+            const totalSlides = validSlides.length;
+            if (totalSlides === 0) {
+              resolve();
+              return;
+            }
+            validSlides.forEach((slide) => {
+              try {
+                const video = slide.querySelector("video");
+                if (video) {
+                  video.pause();
+                  video.currentTime = 0;
+                  video.muted = true;
+                }
+                slide.style.transition = `opacity ${duration}ms ease`;
+                slide.style.opacity = "0";
+                slide.style.visibility = "hidden";
+                slide.classList.remove("visible");
+                setTimeout(() => {
+                  hiddenCount++;
+                  if (hiddenCount === totalSlides) resolve();
+                }, duration);
+              } catch (e) {
+                hiddenCount++;
+                if (hiddenCount === totalSlides) resolve();
+              }
+            });
+          });
+        }
+
+        stopAnimations(preserveCurrent = false) {
+          this.isAnimating = false;
+          this.slides.forEach((slide) => {
+            if (slide && slide.style) {
+              slide.style.transition = "";
+              if (
+                !preserveCurrent ||
+                slide !== this.slides[this.currentIndex]
+              ) {
+                slide.style.opacity = "0";
+                slide.style.visibility = "hidden";
+                slide.classList.remove("visible");
+                const video = slide.querySelector("video");
+                if (video) {
+                  video.pause();
+                  video.muted = true;
+                }
+              }
+            }
+          });
         }
       }
 
