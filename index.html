@@ -2124,6 +2124,7 @@
           this.slidesEl = document.querySelector(".media-slides");
           this.messageDisplay = messageDisplay;
           this.slides = [];
+          this.slideData = new WeakMap();
           this.currentIndex = -1;
           this.files = [];
           this.newMediaQueue = [];
@@ -2133,7 +2134,8 @@
           this.lastCheckTime = 0;
           this.lastFullRefresh = 0;
           this.MAX_FILES = 50;
-          this.MAX_SLIDES = 50;
+          this.MAX_SLIDES_IN_DOM = 50;
+          this.MAX_DATA_ITEMS = 150;
           this.colorQueue = [];
           this.skipNextAutoSlide = false;
           this.retryCount = 0;
@@ -2154,6 +2156,7 @@
           this.justSwitchedToNormalMode = false;
           this.lastWebSocketSwitch = 0;
           this.ws = null;
+          this.wsHandlers = {};
           this.permanentPreloaded = true;
           this.touchStartX = 0;
           this.touchEndX = 0;
@@ -2161,8 +2164,13 @@
           this.mediaErrorEl = null;
           this.contentEl = null;
           this.flashEl = null;
+          this.checkInterval = null;
+          this.cleanupInterval = null;
+          this.mediaSwitchInterval = null;
+          this.eventHandlers = new Map();
           this.initDomCache();
           this.initSwipeHandlers();
+          this.startCleanupInterval();
         }
 
         initDomCache() {
@@ -2173,10 +2181,12 @@
 
         initSwipeHandlers() {
           if (!this.slidesEl) return;
-          this.slidesEl.addEventListener("touchstart", (e) => {
+
+          const touchStartHandler = (e) => {
             this.touchStartX = e.changedTouches[0].screenX;
-          }, { passive: true });
-          this.slidesEl.addEventListener("touchend", (e) => {
+          };
+
+          const touchEndHandler = (e) => {
             if (this.isAnimating || this.messageDisplay.isWordCloudPaused) return;
             this.touchEndX = e.changedTouches[0].screenX;
             const diffX = this.touchStartX - this.touchEndX;
@@ -2185,18 +2195,39 @@
                 this.handleSwipeNext();
               }
             }
-          }, { passive: true });
+          };
+
           let mouseDownX = 0;
-          this.slidesEl.addEventListener("mousedown", (e) => {
+          const mouseDownHandler = (e) => {
             mouseDownX = e.clientX;
-          });
-          this.slidesEl.addEventListener("mouseup", (e) => {
+          };
+
+          const mouseUpHandler = (e) => {
             if (this.isAnimating || this.messageDisplay.isWordCloudPaused) return;
             const diffX = mouseDownX - e.clientX;
             if (Math.abs(diffX) > this.SWIPE_THRESHOLD && diffX > 0) {
               this.handleSwipeNext();
             }
-          });
+          };
+
+          this.slidesEl.addEventListener("touchstart", touchStartHandler, { passive: true });
+          this.slidesEl.addEventListener("touchend", touchEndHandler, { passive: true });
+          this.slidesEl.addEventListener("mousedown", mouseDownHandler);
+          this.slidesEl.addEventListener("mouseup", mouseUpHandler);
+
+          this.eventHandlers.set('touchstart', touchStartHandler);
+          this.eventHandlers.set('touchend', touchEndHandler);
+          this.eventHandlers.set('mousedown', mouseDownHandler);
+          this.eventHandlers.set('mouseup', mouseUpHandler);
+        }
+
+        removeEventListeners() {
+          if (!this.slidesEl) return;
+
+          for (const [event, handler] of this.eventHandlers) {
+            this.slidesEl.removeEventListener(event, handler);
+          }
+          this.eventHandlers.clear();
         }
 
         async handleSwipeNext() {
@@ -2211,8 +2242,12 @@
               resolve();
               return;
             }
+
+            this.clearWebSocketHandlers();
+
             const oldWs = this.ws;
             this.ws = null;
+
             if (oldWs.readyState === WebSocket.OPEN || oldWs.readyState === WebSocket.CONNECTING) {
               oldWs.onclose = () => resolve();
               oldWs.close();
@@ -2222,12 +2257,23 @@
           });
         }
 
+        clearWebSocketHandlers() {
+          if (this.ws) {
+            this.ws.onopen = null;
+            this.ws.onmessage = null;
+            this.ws.onclose = null;
+            this.ws.onerror = null;
+          }
+          this.wsHandlers = {};
+        }
+
         async waitForWebSocketConnection(timeout = 10000) {
           return new Promise((resolve, reject) => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
               resolve();
               return;
             }
+
             const checkInterval = setInterval(() => {
               if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 clearInterval(checkInterval);
@@ -2235,6 +2281,7 @@
                 resolve();
               }
             }, 50);
+
             const timeoutId = setTimeout(() => {
               clearInterval(checkInterval);
               reject(new Error("WebSocket connection timeout"));
@@ -2266,7 +2313,7 @@
                 this.globalQueue = [...this.newMediaFiles];
                 await this.refreshFiles(true);
               }
-              setInterval(() => this.checkNewMediaFiles(), 150000);
+              this.checkInterval = setInterval(() => this.checkNewMediaFiles(), 150000);
               this.startMediaSwitchInterval();
               this.initWebSocket();
             }
@@ -2295,9 +2342,12 @@
         }
 
         initWebSocket() {
+          this.clearWebSocketHandlers();
+
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             return;
           }
+
           if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
             const connectionCheck = () => {
               if (!this.ws) return;
@@ -2313,17 +2363,21 @@
             setTimeout(connectionCheck, 200);
             return;
           }
+
           this.ws = new WebSocket("wss://0808.us.nekhebet.su:8080");
+
           const connectionTimeout = setTimeout(() => {
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
               this.ws.close();
             }
           }, 8000);
-          this.ws.onopen = () => {
+
+          const openHandler = () => {
             clearTimeout(connectionTimeout);
             this.onWebSocketOpened();
           };
-          this.ws.onmessage = async (event) => {
+
+          const messageHandler = async (event) => {
             try {
               const data = JSON.parse(event.data);
               if (data.type === "new_media") {
@@ -2351,15 +2405,29 @@
               }
             } catch (error) {}
           };
-          this.ws.onclose = () => {
+
+          const closeHandler = () => {
             clearTimeout(connectionTimeout);
             this.ws = null;
             setTimeout(() => {
               this.initWebSocket();
             }, 8000);
           };
-          this.ws.onerror = (error) => {
+
+          const errorHandler = (error) => {
             clearTimeout(connectionTimeout);
+          };
+
+          this.ws.onopen = openHandler;
+          this.ws.onmessage = messageHandler;
+          this.ws.onclose = closeHandler;
+          this.ws.onerror = errorHandler;
+
+          this.wsHandlers = {
+            open: openHandler,
+            message: messageHandler,
+            close: closeHandler,
+            error: errorHandler
           };
         }
 
@@ -2420,6 +2488,15 @@
             clearInterval(this.mediaSwitchInterval);
             this.mediaSwitchInterval = null;
           }
+        }
+
+        startCleanupInterval() {
+          if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+          }
+          this.cleanupInterval = setInterval(() => {
+            this.performCleanup();
+          }, 5 * 60 * 1000);
         }
 
         async switchToNormalMode() {
@@ -2534,6 +2611,7 @@
             });
             this.files = [...this.files, ...newFiles].slice(-this.MAX_FILES);
             this.globalQueue.push(...newFiles);
+            this.trimDataArrays();
           } catch (error) {
             if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
           }
@@ -2542,6 +2620,23 @@
         removeSlide(slide) {
           const index = this.slides.findIndex((s) => s === slide);
           if (index !== -1) {
+            const handlers = this.slideData.get(slide);
+            if (handlers) {
+              const media = slide.querySelector("img, video");
+              if (media) {
+                if (handlers.error && media.onerror === handlers.error) {
+                  media.onerror = null;
+                }
+                if (handlers.click) {
+                  media.removeEventListener("click", handlers.click);
+                }
+                if (handlers.loadedmetadata) {
+                  media.removeEventListener("loadedmetadata", handlers.loadedmetadata);
+                }
+              }
+              this.slideData.delete(slide);
+            }
+
             const media = slide.querySelector("img, video");
             if (media) {
               if (media.tagName === "VIDEO") {
@@ -2559,25 +2654,37 @@
           }
         }
 
-        enforceSlideLimit() {
-          while (this.slides.length > this.MAX_SLIDES) {
-            let removedIndex = -1;
-            for (let i = 0; i < this.slides.length; i++) {
-              if (i !== this.currentIndex) {
-                removedIndex = i;
-                break;
-              }
+        cleanupOldSlides() {
+          if (this.slides.length <= this.MAX_SLIDES_IN_DOM) return;
+          const keepFrom = Math.max(0, this.currentIndex - 10);
+          for (let i = this.slides.length - 1; i >= 0; i--) {
+            if (i < keepFrom || i > this.currentIndex + 20) {
+              this.removeSlide(this.slides[i]);
             }
-            if (removedIndex === -1) break;
-            const oldSlide = this.slides[removedIndex];
-            const video = oldSlide.querySelector("video");
-            if (video) {
-              video.pause();
-              video.src = "";
+          }
+        }
+
+        trimDataArrays() {
+          const arrays = [this.files, this.globalQueue, this.newMediaQueue, this.priorityQueue];
+          arrays.forEach(arr => {
+            if (arr.length > this.MAX_DATA_ITEMS) {
+              arr.splice(0, arr.length - this.MAX_DATA_ITEMS);
             }
-            oldSlide.remove();
-            this.slides.splice(removedIndex, 1);
-            if (removedIndex < this.currentIndex) this.currentIndex--;
+          });
+        }
+
+        performCleanup() {
+          this.cleanupOldSlides();
+          this.trimDataArrays();
+          
+          this.files = this.files.slice(-this.MAX_DATA_ITEMS);
+          this.globalQueue = this.globalQueue.slice(-this.MAX_DATA_ITEMS);
+          this.newMediaQueue = this.newMediaQueue.slice(-this.MAX_DATA_ITEMS);
+          this.priorityQueue = this.priorityQueue.slice(-this.MAX_DATA_ITEMS);
+          this.newMediaFiles = this.newMediaFiles.slice(-this.MAX_DATA_ITEMS);
+
+          if (window.gc) {
+            setTimeout(() => window.gc(), 100);
           }
         }
 
@@ -2620,9 +2727,14 @@
               const img = document.createElement("img");
               img.src = `${API_BASE}/media/${id}`;
               img.loading = isActiveOrNext ? "eager" : "lazy";
-              img.onerror = handleError.bind(this);
+              
+              const errorHandler = handleError.bind(this);
+              img.onerror = errorHandler;
+              
               mediaContainer.appendChild(img);
               mediaCreated = true;
+              
+              this.slideData.set(slide, { error: errorHandler });
             } else if (["mp4", "webm", "mov"].includes(file_type)) {
               const video = document.createElement("video");
               video.src = `${API_BASE}/media/${id}`;
@@ -2634,31 +2746,50 @@
               if (!this.isLocalPhraseMode) {
                 video.controls = true;
               }
-              video.addEventListener("loadedmetadata", () => {
+              
+              const loadedHandler = () => {
                 if (this.slides[this.currentIndex]?.dataset.id === id) {
                   video.play().catch((err) => {
                     setTimeout(() => video.play().catch(() => {}), 500);
                   });
                 }
-              });
-              video.onerror = handleError.bind(this);
-              video.addEventListener("click", (event) => {
+              };
+              
+              const clickHandler = (event) => {
                 if (!this.isLocalPhraseMode) {
                   event.preventDefault();
                   this.toggleVideoSound(video, slide);
                 }
-              });
+              };
+              
+              const errorHandler = handleError.bind(this);
+              
+              video.addEventListener("loadedmetadata", loadedHandler);
+              video.addEventListener("click", clickHandler);
+              video.onerror = errorHandler;
+              
               mediaContainer.appendChild(video);
               mediaCreated = true;
+              
+              this.slideData.set(slide, {
+                loadedmetadata: loadedHandler,
+                click: clickHandler,
+                error: errorHandler
+              });
             } else if (file_type === "json") {
               const lottie = document.createElement("lottie-player");
               lottie.src = `${API_BASE}/media/${id}`;
               lottie.autoplay = true;
               lottie.loop = true;
               lottie.loading = isActiveOrNext ? "eager" : "lazy";
-              lottie.addEventListener("error", handleError.bind(this));
+              
+              const errorHandler = handleError.bind(this);
+              lottie.addEventListener("error", errorHandler);
+              
               mediaContainer.appendChild(lottie);
               mediaCreated = true;
+              
+              this.slideData.set(slide, { error: errorHandler });
             }
             if (mediaCreated) {
               slide.appendChild(mediaContainer);
@@ -2669,7 +2800,6 @@
                 this.slidesEl.appendChild(slide);
                 this.slides.push(slide);
               }
-              this.enforceSlideLimit();
             }
           } catch (err) {
             console.error("Error creating media element:", err);
@@ -2754,8 +2884,10 @@
           }
           let nextIndex = await this.selectNextIndex();
           if (nextIndex === -1 && !this.isLocalPhraseMode) {
-            this.currentPage++;
-            await this.refreshFiles(true);
+            if (this.globalQueue.length < 10) {
+              this.currentPage++;
+              await this.refreshFiles(true);
+            }
             nextIndex = await this.selectNextIndex();
           }
           if (nextIndex !== -1) {
@@ -3114,10 +3246,6 @@
               return nextIndex;
             }
           }
-          if (this.globalQueue.length <= 10 && !this.isLocalPhraseMode) {
-            this.currentPage++;
-            await this.refreshFiles(true).catch((error) => {});
-          }
           if (this.globalQueue.length === 0) {
             if (this.isLocalPhraseMode) {
               this.globalQueue = [...this.newMediaFiles];
@@ -3205,6 +3333,7 @@
             this.newMediaQueue = this.newMediaQueue.filter(
               (f) => String(f.id) !== slideId,
             );
+            this.cleanupOldSlides();
           } catch (error) {
           } finally {
             this.isAnimating = false;
@@ -3266,6 +3395,43 @@
               }
             }
           });
+        }
+
+        destroy() {
+          this.removeEventListeners();
+          
+          if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+          }
+          
+          if (this.checkInterval) {
+            clearInterval(this.checkInterval);
+            this.checkInterval = null;
+          }
+          
+          this.stopMediaSwitchInterval();
+          
+          this.clearWebSocketHandlers();
+          if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+          }
+          
+          this.slides.forEach(slide => this.removeSlide(slide));
+          this.slides = [];
+          this.slideData = new WeakMap();
+          
+          this.files = [];
+          this.globalQueue = [];
+          this.priorityQueue = [];
+          this.newMediaQueue = [];
+          this.newMediaFiles = [];
+          
+          this.slidesEl = null;
+          this.mediaErrorEl = null;
+          this.contentEl = null;
+          this.flashEl = null;
         }
       }
 
