@@ -2124,7 +2124,6 @@
           this.slidesEl = document.querySelector(".media-slides");
           this.messageDisplay = messageDisplay;
           this.slides = [];
-          this.MAX_SLIDES = 50;
           this.currentIndex = -1;
           this.files = [];
           this.newMediaQueue = [];
@@ -2134,6 +2133,7 @@
           this.lastCheckTime = 0;
           this.lastFullRefresh = 0;
           this.MAX_FILES = 50;
+          this.MAX_SLIDES = 50;
           this.colorQueue = [];
           this.skipNextAutoSlide = false;
           this.retryCount = 0;
@@ -2222,6 +2222,21 @@
             !this.messageDisplay.nextButton.disabled
           ) {
             await window.nextSlide();
+          }
+        }
+
+        cleanupOldSlides() {
+          if (this.slides.length > this.MAX_SLIDES) {
+            const excess = this.slides.length - this.MAX_SLIDES;
+            for (let i = 0; i < excess; i++) {
+              const oldSlide = this.slides.shift();
+              if (oldSlide && oldSlide.parentNode) {
+                oldSlide.remove();
+              }
+            }
+            if (this.files && Array.isArray(this.files)) {
+              this.files.splice(0, excess);
+            }
           }
         }
 
@@ -2721,109 +2736,92 @@
           }
         }
 
-        cleanupOldSlides() {
-            if (this.slides.length > this.MAX_SLIDES) {
-              const excess = this.slides.length - this.MAX_SLIDES;
-              for (let i = 0; i < excess; i++) {
-                const oldSlide = this.slides.shift();
-                if (oldSlide && oldSlide.parentNode) {
-                  oldSlide.remove();
-                }
-              }
-              if (this.files && Array.isArray(this.files)) {
-                this.files.splice(0, excess);
-              }
-            }
-          }
-
         async nextSlide(isManual = false) {
-            if (this.isAnimating || this.messageDisplay.isWordCloudPaused) {
-              return;
-            }
-            if (
-              (this.messageDisplay.isPaused ||
-                this.messageDisplay.isWordCloudPaused) &&
-              !isManual
-            ) {
-              return;
+          if (this.isAnimating || this.messageDisplay.isWordCloudPaused) {
+            return;
+          }
+          if (
+            (this.messageDisplay.isPaused ||
+              this.messageDisplay.isWordCloudPaused) &&
+            !isManual
+          ) {
+            return;
+          }
+          if (this.slides.length === 0) {
+            await this.refreshFiles(true);
+            if (this.slides.length === 0) {
+              await this.loadNewMediaFiles();
+              this.newMediaFiles.forEach(({ id, mtime, file_type }) => {
+                this.createSlide({ id, mtime, file_type });
+              });
+              if (!this.isLocalPhraseMode) {
+                this.globalQueue = [...this.newMediaFiles];
+                this.currentPage = 1;
+              }
             }
             if (this.slides.length === 0) {
-              await this.refreshFiles(true);
-              if (this.slides.length === 0) {
-                await this.loadNewMediaFiles();
-                this.newMediaFiles.forEach(({ id, mtime, file_type }) => {
-                  this.createSlide({ id, mtime, file_type });
-                });
-                if (!this.isLocalPhraseMode) {
-                  this.globalQueue = [...this.newMediaFiles];
-                  this.currentPage = 1;
-                }
-              }
-              if (this.slides.length === 0) {
-                if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
-                return;
-              }
-            }
-            if (!isManual && this.skipNextAutoSlide) {
-              this.skipNextAutoSlide = false;
-              this.ignoreNextMessageSlide = true;
+              if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
               return;
             }
-            if (
-              this.isLocalPhraseMode &&
-              this.messageDisplay.queue.length === 0 &&
-              !isManual
-            ) {
-              return;
-            }
-            if (
-              !isManual &&
-              this.lastManualSwitch &&
-              Date.now() - this.lastManualSwitch < 1500
-            ) {
-              return;
-            }
-            if (!isManual && Date.now() - this.lastWebSocketSwitch < 500) {
-              return;
-            }
-            if (!isManual) {
-              this.lastWebSocketSwitch = Date.now();
-            }
-            if (!this.isLocalPhraseMode && this.priorityQueue.length > 0) {
-              let attempts = 3;
-              while (this.priorityQueue.length > 0 && attempts > 0) {
-                const nextFile = this.priorityQueue[0];
-                let nextIndex = this.slides.findIndex(
+          }
+          if (!isManual && this.skipNextAutoSlide) {
+            this.skipNextAutoSlide = false;
+            this.ignoreNextMessageSlide = true;
+            return;
+          }
+          if (
+            this.isLocalPhraseMode &&
+            this.messageDisplay.queue.length === 0 &&
+            !isManual
+          ) {
+            return;
+          }
+          if (
+            !isManual &&
+            this.lastManualSwitch &&
+            Date.now() - this.lastManualSwitch < 1500
+          ) {
+            return;
+          }
+          if (!isManual && Date.now() - this.lastWebSocketSwitch < 500) {
+            return;
+          }
+          if (!isManual) {
+            this.lastWebSocketSwitch = Date.now();
+          }
+          if (!this.isLocalPhraseMode && this.priorityQueue.length > 0) {
+            let attempts = 3;
+            while (this.priorityQueue.length > 0 && attempts > 0) {
+              const nextFile = this.priorityQueue[0];
+              let nextIndex = this.slides.findIndex(
+                (slide) => String(slide.dataset.id) === String(nextFile.id),
+              );
+              if (nextIndex === -1) {
+                await new Promise((resolve) => setTimeout(resolve, 300));
+                nextIndex = this.slides.findIndex(
                   (slide) => String(slide.dataset.id) === String(nextFile.id),
                 );
                 if (nextIndex === -1) {
-                  await new Promise((resolve) => setTimeout(resolve, 300));
-                  nextIndex = this.slides.findIndex(
-                    (slide) => String(slide.dataset.id) === String(nextFile.id),
-                  );
-                  if (nextIndex === -1) {
-                    attempts--;
-                    continue;
-                  }
+                  attempts--;
+                  continue;
                 }
-                this.priorityQueue.shift();
-                await this.showSlide(nextIndex);
-                this.cleanupOldSlides();
-                return;
               }
-            }
-            let nextIndex = await this.selectNextIndex();
-            if (nextIndex === -1 && !this.isLocalPhraseMode) {
-              this.currentPage++;
-              await this.refreshFiles(true);
-              nextIndex = await this.selectNextIndex();
-            }
-            if (nextIndex !== -1) {
+              this.priorityQueue.shift();
               await this.showSlide(nextIndex);
-              this.cleanupOldSlides();
-            } else {
-              if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
+              return;
             }
+          }
+          let nextIndex = await this.selectNextIndex();
+          if (nextIndex === -1 && !this.isLocalPhraseMode) {
+            this.currentPage++;
+            await this.refreshFiles(true);
+            nextIndex = await this.selectNextIndex();
+          }
+          if (nextIndex !== -1) {
+            await this.showSlide(nextIndex);
+            this.cleanupOldSlides();
+          } else {
+            if (this.mediaErrorEl) this.mediaErrorEl.style.display = "block";
           }
         }
 
