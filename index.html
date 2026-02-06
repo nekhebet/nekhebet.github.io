@@ -1528,8 +1528,6 @@
                   ctx.rotate(-rotateDeg);
                 }
 
-                // Please read https://bugzil.la/737852#c6.
-
                 ctx.textBaseline = "middle";
                 ctx.fillText(
                   word,
@@ -4196,8 +4194,10 @@
               "<p>Error: word cloud container invisible</p>";
             return;
           }
+
           this.wordCloudEl.innerHTML = "";
           this.wordCloudEl.classList.remove("word-cloud-hidden");
+
           const stopWords = new Set([
             "а",
             "без",
@@ -4320,6 +4320,7 @@
             "эту",
             "я",
           ]);
+
           let wordList = [];
           if (wordCloudData && wordCloudData.length > 0) {
             wordList = wordCloudData
@@ -4330,6 +4331,7 @@
               )
               .map((item) => [item.word.toUpperCase(), item.freq || 1]);
           }
+
           if (wordList.length === 0) {
             const wordSet = new Set();
             this.localPhrases.forEach((phrase) => {
@@ -4346,6 +4348,7 @@
               Math.random() * 6 + 2,
             ]);
           }
+
           if (wordList.length === 0) {
             wordList = [
               ["WORD", 1],
@@ -4361,18 +4364,22 @@
               ([word]) => word.length > 2 && !stopWords.has(word.toLowerCase()),
             );
           }
+
           if (typeof WordCloud === "undefined") {
             this.wordCloudEl.innerHTML =
               "<p>Error: WordCloud not available</p>";
             return;
           }
+
           const maxFreq = Math.max(
             ...wordList.map(([_, freq]) => parseFloat(freq) || 1),
           );
+
           wordList = wordList.map(([word, freq]) => [
             word,
             Math.max(1, (parseFloat(freq) / maxFreq) * 10),
           ]);
+
           try {
             WordCloud(this.wordCloudEl, {
               list: wordList,
@@ -4591,6 +4598,13 @@
           }
           this.lastResetClick = now;
 
+          const wordCloudEl = document.getElementById("wordCloud");
+
+          if (wordCloudEl) {
+            wordCloudEl.classList.add("word-cloud-hidden");
+            wordCloudEl.innerHTML = "";
+          }
+
           this.isResetting = true;
           this.isWebSocketReady = false;
           this.isFastStartMode = true;
@@ -4602,16 +4616,21 @@
           if (this.isAnimating) {
             await new Promise((resolve) => setTimeout(resolve, 200));
           }
+
           this.isAnimating = false;
+
           this.fxText.stopAnimation();
           this.mediaSlides.stopAnimations();
           this.stopPauseTimer();
+
           this.queue = [];
           this.currentMessage = null;
           this.currentHighlights = [];
           this.currentPrefix = "";
-          this.textEl.innerHTML = "";
+          this.textEl.textContent = " ";
+
           this.updateResetButton();
+
           this.mediaSlides.files = [];
           this.mediaSlides.currentPage = 1;
 
@@ -4622,7 +4641,6 @@
             await new Promise((resolve) => setTimeout(resolve, 300));
 
             await this.mediaSlides.initWebSocket();
-
             await this.mediaSlides.waitForWebSocketConnection(8000);
 
             this.initWebSocket();
@@ -4637,15 +4655,23 @@
                 resetIndicator.style.backgroundColor = "";
               }, 6000);
             }
+
             if (this.flashEl) {
               this.flashEl.classList.add("active");
               setTimeout(() => {
                 this.flashEl.classList.remove("active");
               }, 300);
             }
-            await this.renderWordCloud(this.generateLocalWordCloud());
+
+            await new Promise((resolve) => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+              });
+            });
+
             await this.mediaSlides.switchToNormalMode();
             this.updatePauseButton();
+
             if (this.localPhrases.length > 0) {
               const defaultPhrase = this.localPhrases[0];
               await this.fxText.setText(defaultPhrase, [], "", "instant");
@@ -4653,12 +4679,27 @@
               this.currentHighlights = [];
               this.currentPrefix = "";
             }
+
+            if (wordCloudEl) {
+              wordCloudEl.classList.remove("word-cloud-hidden");
+            }
+
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+
+            await this.renderWordCloud(this.generateLocalWordCloud());
+
           } catch (error) {
             this.isResetting = false;
             this.isFastStartMode = false;
+
+            if (wordCloudEl) {
+              wordCloudEl.classList.remove("word-cloud-hidden");
+            }
+
             setTimeout(() => this.initWebSocket(), 1000);
           }
         }
+
       }
 
       const display = new MessageDisplay();
