@@ -4597,56 +4597,43 @@
             return;
           }
           this.lastResetClick = now;
-
           const wordCloudEl = document.getElementById("wordCloud");
-
           if (wordCloudEl) {
             wordCloudEl.classList.add("word-cloud-hidden");
             wordCloudEl.innerHTML = "";
           }
-
           this.isResetting = true;
           this.isWebSocketReady = false;
           this.isFastStartMode = true;
-
           setTimeout(() => {
             this.isFastStartMode = false;
           }, 6000);
-
           if (this.isAnimating) {
             await new Promise((resolve) => setTimeout(resolve, 200));
           }
-
           this.isAnimating = false;
-
           this.fxText.stopAnimation();
           this.mediaSlides.stopAnimations();
           this.stopPauseTimer();
-
           this.queue = [];
+          this.pendingMessagesBuffer = [];
+          this.mediaSlides.priorityQueue = [];
+          this.mediaSlides.newMediaQueue = [];
           this.currentMessage = null;
           this.currentHighlights = [];
           this.currentPrefix = "";
           this.textEl.textContent = " ";
-
           this.updateResetButton();
-
           this.mediaSlides.files = [];
           this.mediaSlides.currentPage = 1;
-
           try {
             await this.closeWebSocket();
             await this.mediaSlides.closeWebSocket();
-
             await new Promise((resolve) => setTimeout(resolve, 300));
-
             await this.mediaSlides.initWebSocket();
             await this.mediaSlides.waitForWebSocketConnection(8000);
-
             this.initWebSocket();
-
             this.isResetting = false;
-
             const resetIndicator =
               this.resetButton.querySelector(".reset-indicator");
             if (resetIndicator) {
@@ -4655,23 +4642,19 @@
                 resetIndicator.style.backgroundColor = "";
               }, 6000);
             }
-
             if (this.flashEl) {
               this.flashEl.classList.add("active");
               setTimeout(() => {
                 this.flashEl.classList.remove("active");
               }, 300);
             }
-
             await new Promise((resolve) => {
               requestAnimationFrame(() => {
                 requestAnimationFrame(resolve);
               });
             });
-
             await this.mediaSlides.switchToNormalMode();
             this.updatePauseButton();
-
             if (this.localPhrases.length > 0) {
               const defaultPhrase = this.localPhrases[0];
               await this.fxText.setText(defaultPhrase, [], "", "instant");
@@ -4679,23 +4662,14 @@
               this.currentHighlights = [];
               this.currentPrefix = "";
             }
-
             if (wordCloudEl) {
               wordCloudEl.classList.remove("word-cloud-hidden");
             }
-
             await new Promise((resolve) => requestAnimationFrame(resolve));
-
             await this.renderWordCloud(this.generateLocalWordCloud());
-
           } catch (error) {
             this.isResetting = false;
             this.isFastStartMode = false;
-
-            if (wordCloudEl) {
-              wordCloudEl.classList.remove("word-cloud-hidden");
-            }
-
             setTimeout(() => this.initWebSocket(), 1000);
           }
         }
