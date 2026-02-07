@@ -4633,7 +4633,6 @@
             await this.mediaSlides.initWebSocket();
             await this.mediaSlides.waitForWebSocketConnection(8000);
             this.initWebSocket();
-            this.isResetting = false;
             const resetIndicator =
               this.resetButton.querySelector(".reset-indicator");
             if (resetIndicator) {
@@ -4667,7 +4666,13 @@
             }
             await new Promise((resolve) => requestAnimationFrame(resolve));
             await this.renderWordCloud(this.generateLocalWordCloud());
+
+            this.pendingMessagesBuffer = [];
+            this.queue = [];
+            this.isResetting = false;
           } catch (error) {
+            this.pendingMessagesBuffer = [];
+            this.queue = [];
             this.isResetting = false;
             this.isFastStartMode = false;
             setTimeout(() => this.initWebSocket(), 1000);
